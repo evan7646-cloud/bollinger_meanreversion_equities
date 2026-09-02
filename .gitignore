@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.DS_Store
+data_mt5_semiconductor_ticks/
+data_mt5_us_5m/
+data_mt5_us_15m/
+data_mt5_us_30m/
+data_mt5_equities_cfd/
+data_tv_indices_5m/
+data_tv_intraday_5m/
