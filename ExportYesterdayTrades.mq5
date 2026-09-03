@@ -88,23 +88,57 @@ void OnStart()
              "entry_time", "entry_price", "exit_time", "exit_price",
              "profit", "swap", "commission", "net_pnl", "status", "comment");
 
+   // ⚠️ 重要：HistorySelectByPosition() 會「覆蓋」目前的歷史選取快取，
+   // 所以必須先把整天的 deal 資料一次抓進自己的陣列，之後再做逐倉位查詢，
+   // 否則外層迴圈的 HistoryDealGetTicket(i) 會開始讀到被換掉的資料集（只會抓到第一筆）。
+   ulong    all_tickets[];
+   ulong    all_positions[];
+   long     all_entries[];
+   ArrayResize(all_tickets, total);
+   ArrayResize(all_positions, total);
+   ArrayResize(all_entries, total);
+   int cached = 0;
+   for(int i = 0; i < total; i++)
+   {
+      ulong ticket = HistoryDealGetTicket(i);
+      if(ticket == 0) continue;
+      if(HistoryDealGetInteger(ticket, DEAL_MAGIC) != (long)InpMagicNumber) continue; // 只留本EA的deal
+
+      all_tickets[cached]   = ticket;
+      all_positions[cached] = (ulong)HistoryDealGetInteger(ticket, DEAL_POSITION_ID);
+      all_entries[cached]   = HistoryDealGetInteger(ticket, DEAL_ENTRY);
+      cached++;
+   }
+   Print("其中屬於本EA(magic=", InpMagicNumber, ")的成交筆數: ", cached);
+
+   // 先把每個 OUT deal 的欄位也快取起來（同樣是為了避開 HistorySelectByPosition 覆蓋問題）
+   double   out_profit[], out_swap[], out_commission[], out_price[];
+   datetime out_time[];
+   string   out_symbol[];
+   ArrayResize(out_profit, cached); ArrayResize(out_swap, cached);
+   ArrayResize(out_commission, cached); ArrayResize(out_price, cached);
+   ArrayResize(out_time, cached); ArrayResize(out_symbol, cached);
+   for(int i = 0; i < cached; i++)
+   {
+      ulong t = all_tickets[i];
+      out_profit[i]     = HistoryDealGetDouble(t, DEAL_PROFIT);
+      out_swap[i]       = HistoryDealGetDouble(t, DEAL_SWAP);
+      out_commission[i] = HistoryDealGetDouble(t, DEAL_COMMISSION);
+      out_price[i]      = HistoryDealGetDouble(t, DEAL_PRICE);
+      out_time[i]       = (datetime)HistoryDealGetInteger(t, DEAL_TIME);
+      out_symbol[i]     = HistoryDealGetString(t, DEAL_SYMBOL);
+   }
+
    // 用陣列記錄已處理過的 position_id，避免同一倉位的 IN/OUT 兩筆deal被重複輸出兩行
    ulong processed_positions[];
    int processed_count = 0;
    int row_count = 0;
 
-   for(int i = 0; i < total; i++)
+   for(int i = 0; i < cached; i++)
    {
-      ulong ticket = HistoryDealGetTicket(i);
-      if(ticket == 0) continue;
+      if(all_entries[i] == DEAL_ENTRY_IN) continue; // IN deal 交給 FindEntryDeal 統一處理，這裡跳過避免重複
 
-      long magic = HistoryDealGetInteger(ticket, DEAL_MAGIC);
-      if(magic != (long)InpMagicNumber) continue; // 只留本EA的deal
-
-      long deal_entry = HistoryDealGetInteger(ticket, DEAL_ENTRY);
-      if(deal_entry == DEAL_ENTRY_IN) continue; // IN deal 交給 FindEntryDeal 統一處理，這裡跳過避免重複
-
-      ulong position_id = HistoryDealGetInteger(ticket, DEAL_POSITION_ID);
+      ulong position_id = all_positions[i];
 
       bool already = false;
       for(int p = 0; p < processed_count; p++)
@@ -115,26 +149,22 @@ void OnStart()
       processed_positions[processed_count] = position_id;
       processed_count++;
 
-      // 這是 OUT deal（平倉），彙總這個position在昨天範圍內所有OUT deal的損益/swap/手續費
+      // 這是 OUT deal（平倉），彙總這個position在範圍內所有OUT deal的損益/swap/手續費
       // （逾時/停損有時會分批平倉，同一position可能有多筆OUT deal）
       double total_profit = 0, total_swap = 0, total_commission = 0;
       datetime exit_time = 0;
       double exit_price = 0;
       string symbol_out = "";
-      for(int j = 0; j < total; j++)
+      for(int j = 0; j < cached; j++)
       {
-         ulong t2 = HistoryDealGetTicket(j);
-         if(t2 == 0) continue;
-         if(HistoryDealGetInteger(t2, DEAL_MAGIC) != (long)InpMagicNumber) continue;
-         if(HistoryDealGetInteger(t2, DEAL_POSITION_ID) != position_id) continue;
-         if(HistoryDealGetInteger(t2, DEAL_ENTRY) == DEAL_ENTRY_IN) continue;
+         if(all_positions[j] != position_id) continue;
+         if(all_entries[j] == DEAL_ENTRY_IN) continue;
 
-         total_profit     += HistoryDealGetDouble(t2, DEAL_PROFIT);
-         total_swap       += HistoryDealGetDouble(t2, DEAL_SWAP);
-         total_commission += HistoryDealGetDouble(t2, DEAL_COMMISSION);
-         datetime tt = (datetime)HistoryDealGetInteger(t2, DEAL_TIME);
-         if(tt > exit_time) { exit_time = tt; exit_price = HistoryDealGetDouble(t2, DEAL_PRICE); }
-         symbol_out = HistoryDealGetString(t2, DEAL_SYMBOL);
+         total_profit     += out_profit[j];
+         total_swap       += out_swap[j];
+         total_commission += out_commission[j];
+         if(out_time[j] > exit_time) { exit_time = out_time[j]; exit_price = out_price[j]; }
+         symbol_out = out_symbol[j];
       }
 
       datetime entry_time = 0; double entry_price = 0, volume = 0;
@@ -155,15 +185,17 @@ void OnStart()
       row_count++;
    }
 
-   // 再找「昨天有開倉，但到現在還沒平倉」的position（IN deal在昨天，但目前仍是open position）
-   for(int i = 0; i < total; i++)
+   // 再找「當天有開倉，但到現在還沒平倉」的position（IN deal在範圍內，但目前仍是open position）
+   // 用一開始快取好的 ticket 陣列，並先把歷史選取還原成整天範圍
+   //（上面的 FindEntryDeal 呼叫過 HistorySelectByPosition，選取快取已被換掉，
+   //  不還原的話下面用 ticket 去讀欄位會失敗）
+   HistorySelect(range_from, range_to);
+   for(int i = 0; i < cached; i++)
    {
-      ulong ticket = HistoryDealGetTicket(i);
-      if(ticket == 0) continue;
-      if(HistoryDealGetInteger(ticket, DEAL_MAGIC) != (long)InpMagicNumber) continue;
-      if(HistoryDealGetInteger(ticket, DEAL_ENTRY) != DEAL_ENTRY_IN) continue;
+      if(all_entries[i] != DEAL_ENTRY_IN) continue;
+      ulong ticket = all_tickets[i];
 
-      ulong position_id = HistoryDealGetInteger(ticket, DEAL_POSITION_ID);
+      ulong position_id = all_positions[i];
       bool already = false;
       for(int p = 0; p < processed_count; p++)
          if(processed_positions[p] == position_id) { already = true; break; }
