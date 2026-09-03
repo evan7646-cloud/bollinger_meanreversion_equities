@@ -39,7 +39,8 @@ RVOL_THRESHOLD = 1.2         # 優化A：當日tick_volume要達到過去20天�
 def compute_features(df: pd.DataFrame, window: int = WINDOW):
     df = df.copy()
     df["mid"] = df["close"].rolling(window).mean()
-    std = df["close"].rolling(window).std()
+    # ddof=0：母體標準差，跟 MT5 iBands 一致（詳見 bollinger_breakout_trend.compute_bands 的說明）
+    std = df["close"].rolling(window).std(ddof=0)
     df["upper"] = df["mid"] + STD_MULT * std
     df["lower"] = df["mid"] - STD_MULT * std
     df["breakout_up"] = (df["close"] > df["upper"]) & (df["close"].shift(1) <= df["upper"].shift(1))

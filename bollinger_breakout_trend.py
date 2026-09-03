@@ -5,7 +5,7 @@ Phase 4：Bollinger Band 突破順勢策略（20MA / 50MA ± 2 標準差），15
 規則（單純突破，這次不疊加量能/加速度濾網 —— Phase 2a/3 已經證明疊加技術面濾網
       系統性地讓表現變差，這次先測「乾淨版本」有沒有 edge，避免重蹈覆轍）：
   band_mid = close.rolling(window).mean()      # window = 20 或 50
-  band_std = close.rolling(window).std()
+  band_std = close.rolling(window).std(ddof=0)   # 母體標準差，跟 MT5 iBands 一致
   upper = band_mid + 2 * band_std
   lower = band_mid - 2 * band_std
 
@@ -68,7 +68,10 @@ def resample_ohlcv(df: pd.DataFrame, rule: str) -> pd.DataFrame:
 def compute_bands(df: pd.DataFrame, window: int) -> pd.DataFrame:
     df = df.copy()
     df["mid"] = df["close"].rolling(window).mean()
-    std = df["close"].rolling(window).std()
+    # ddof=0（母體標準差，除以N）是布林通道的原始定義，也是 MT5 iBands 實際使用的公式。
+    # pandas 的 .std() 預設 ddof=1（樣本標準差，除以N-1），會讓通道寬 2.6%(=sqrt(20/19))，
+    # 導致回測訊號跟實盤 EA 對不起來（已用 ExportBandsCheck.mq5 匯出481根iBands實測驗證）。
+    std = df["close"].rolling(window).std(ddof=0)
     df["upper"] = df["mid"] + STD_MULT * std
     df["lower"] = df["mid"] - STD_MULT * std
     df["breakout_up"] = (df["close"] > df["upper"]) & (df["close"].shift(1) <= df["upper"].shift(1))

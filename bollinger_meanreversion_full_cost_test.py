@@ -36,7 +36,8 @@ TRADE_LIST = ["AVGO", "JPM", "QCOM", "PLTR", "AMD", "INTC", "SIEGn", "ASML",
 def compute_features(df: pd.DataFrame):
     df = df.copy()
     df["mid"] = df["close"].rolling(WINDOW).mean()
-    std = df["close"].rolling(WINDOW).std()
+    # ddof=0：母體標準差，跟 MT5 iBands 一致（詳見 bollinger_breakout_trend.compute_bands 的說明）
+    std = df["close"].rolling(WINDOW).std(ddof=0)
     df["upper"] = df["mid"] + STD_MULT * std
     df["lower"] = df["mid"] - STD_MULT * std
     df["breakout_up"] = (df["close"] > df["upper"]) & (df["close"].shift(1) <= df["upper"].shift(1))
