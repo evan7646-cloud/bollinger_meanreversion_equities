@@ -10,26 +10,31 @@
 #property script_show_inputs
 #property description "匯出指定時間區間的 tick(bid/ask/spread) 與 1分K 至 MQL5/Files/，用來查證某筆成交的滑價到底是點差、跳空、還是真實波動造成的"
 
-input string InpSymbol   = "SNOW";                 // 標的
-input string InpFromTime = "2026.09.02 16:40:00";  // 起始時間（伺服器時間）
-input string InpToTime   = "2026.09.02 16:50:00";  // 結束時間（伺服器時間）
+input string InpSymbol   = "";                     // 標的（留空=自動用目前掛圖表的商品）
+input string InpFromTime = "";                     // 起始時間（伺服器時間，格式YYYY.MM.DD HH:MM:SS，留空=目前伺服器時間往前10分鐘）
+input string InpToTime   = "";                     // 結束時間（留空=目前伺服器時間）
 
 void OnStart()
 {
-   string sym = InpSymbol;
+   string sym = (InpSymbol == "") ? _Symbol : InpSymbol; // 留空就用腳本掛的那張圖表的商品
    if(!SymbolSelect(sym, true))
    {
       Print("❌ 找不到商品 ", sym);
       return;
    }
 
-   datetime from = StringToTime(InpFromTime);
-   datetime to   = StringToTime(InpToTime);
+   datetime default_to   = TimeCurrent();
+   datetime default_from = default_to - 10 * 60; // 預設抓最近10分鐘
+
+   datetime from = (InpFromTime == "") ? default_from : StringToTime(InpFromTime);
+   datetime to   = (InpToTime   == "") ? default_to   : StringToTime(InpToTime);
    if(from <= 0 || to <= from)
    {
       Print("❌ 時間格式錯誤，請用 YYYY.MM.DD HH:MM:SS");
       return;
    }
+   Print("📌 標的=", sym, "  區間=", TimeToString(from, TIME_DATE|TIME_SECONDS),
+         " ~ ", TimeToString(to, TIME_DATE|TIME_SECONDS));
 
    //--- 1) 匯出逐筆 tick
    MqlTick ticks[];
