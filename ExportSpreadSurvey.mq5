@@ -39,12 +39,21 @@ int ExportOne(string sym, datetime from, datetime to)
    }
    if(n <= 0)
    {
-      Print("  ⚠️ ", sym, "：等20秒仍無 tick 歷史（券商可能未保留該商品此區間的逐筆資料）");
+      // 查出這檔商品的 tick 歷史最早到哪一天，方便判斷是「這個日期太舊」還是「這檔沒資料」
+      datetime first_tick = 0;
+      MqlTick probe[];
+      if(CopyTicks(sym, probe, COPY_TICKS_ALL, 0, 1) > 0)
+         first_tick = (datetime)(probe[0].time_msc / 1000);
+      Print("  ⚠️ ", sym, "：等20秒仍無 tick 歷史",
+            (first_tick > 0 ? ("（該商品最早的 tick 約在 " + TimeToString(first_tick, TIME_DATE) + "）") : "（完全查不到tick）"));
       return 0;
    }
    if(n > InpMaxTicks) n = InpMaxTicks;
 
-   string fn = "Spread_" + sym + ".csv";
+   // 檔名帶上日期，才能同時保留多個日期的調查結果做比較（例如比較 2024 vs 2026 的點差）
+   string date_tag = InpDate;
+   StringReplace(date_tag, ".", "");
+   string fn = "Spread_" + sym + "_" + date_tag + ".csv";
    int fh = FileOpen(fn, FILE_WRITE | FILE_CSV | FILE_ANSI, ",");
    if(fh == INVALID_HANDLE)
    {
