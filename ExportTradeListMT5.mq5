@@ -50,10 +50,40 @@ string ResolveStockSymbol(string base_sym)
 }
 
 //+------------------------------------------------------------------+
+//| 主動要求終端機跟伺服器同步最新K棒，不用手動開圖表                         |
+//| 反覆呼叫 CopyRates 會觸發終端機向伺服器要更多歷史資料（背景下載），        |
+//| 這裡等到「最新一根K棒時間夠接近現在」或逾時為止                          |
+//+------------------------------------------------------------------+
+bool EnsureFreshHistory(string sym, ENUM_TIMEFRAMES tf, int max_wait_sec)
+{
+   ulong start_tick = GetTickCount();
+   datetime tf_seconds = (datetime)PeriodSeconds(tf);
+
+   while((GetTickCount() - start_tick) < (ulong)(max_wait_sec * 1000))
+   {
+      MqlRates probe[];
+      ArraySetAsSeries(probe, true); // index 0 = 最新
+      int n = CopyRates(sym, tf, 0, 5, probe); // 每次呼叫都會促使終端機跟伺服器要資料
+
+      if(n > 0)
+      {
+         datetime latest = probe[0].time;
+         datetime now = TimeCurrent(); // 伺服器時間（比本機時間準確）
+         if(now - latest <= tf_seconds * 3) // 最新K棒落在「現在往回3根」以內，視為已同步到位
+            return true;
+      }
+      Sleep(400); // 短暫等待後端下載完成再檢查一次
+   }
+   return false; // 逾時仍未同步到最新，呼叫端仍會匯出目前拿得到的資料，並印出警告
+}
+
+//+------------------------------------------------------------------+
 //| 匯出單一商品 15m K 線（含真實 Spread 點差欄位），格式跟舊腳本一致           |
 //+------------------------------------------------------------------+
-int ExportBarHistory15m(string sym, string base_sym)
+int ExportBarHistory15m(string sym, string base_sym, bool &was_stale)
 {
+   was_stale = !EnsureFreshHistory(sym, PERIOD_M15, 15); // 最多主動等15秒讓終端機同步到最新
+
    MqlRates rates[];
    ArraySetAsSeries(rates, false);
    int copied = CopyRates(sym, PERIOD_M15, 0, InpMaxBars, rates);
@@ -120,11 +150,13 @@ void OnStart()
          continue;
       }
 
-      int bars = ExportBarHistory15m(resolved, base);
+      bool was_stale = false;
+      int bars = ExportBarHistory15m(resolved, base, was_stale);
       if(bars > 0)
       {
          ok_count++;
-         Print("✅ [", (i+1), "/", n, "] ", base, " (", resolved, ")：匯出 ", bars, " 根 15m K棒");
+         string stale_note = was_stale ? "（⏳ 等待15秒後仍未同步到最新，資料可能不是最新的，建議稍後重跑一次）" : "";
+         Print("✅ [", (i+1), "/", n, "] ", base, " (", resolved, ")：匯出 ", bars, " 根 15m K棒", stale_note);
          if(meta_handle != INVALID_HANDLE)
          {
             string path = SymbolInfoString(resolved, SYMBOL_PATH);
@@ -133,7 +165,7 @@ void OnStart()
       }
       else
       {
-         Print("⚠️ [", (i+1), "/", n, "] ", base, " (", resolved, ")：匯出失敗（可能沒有歷史資料，先在圖表打開該商品讓終端機下載）");
+         Print("⚠️ [", (i+1), "/", n, "] ", base, " (", resolved, ")：匯出失敗（完全沒有歷史資料，請確認該商品在市場報價視窗可見、且終端機已連線）");
       }
    }
 
