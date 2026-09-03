@@ -35,10 +35,24 @@ void OnStart()
    }
    Print("📌 標的=", sym, "  區間=", TimeToString(from, TIME_DATE|TIME_SECONDS),
          " ~ ", TimeToString(to, TIME_DATE|TIME_SECONDS));
+   if(InpFromTime == "" || InpToTime == "")
+      Print("⚠️ InpFromTime/InpToTime 有留空，套用預設值（最近10分鐘）。要查歷史某個時間點，"
+            "請務必在參數視窗填入 YYYY.MM.DD HH:MM:SS 格式的區間。");
 
-   //--- 1) 匯出逐筆 tick
+   //--- 1) 匯出逐筆 tick（過去的區間第一次呼叫常常要先觸發終端機跟伺服器要資料，
+   //       所以反覆呼叫最多15秒，而不是呼叫一次拿到0筆就放棄）
    MqlTick ticks[];
-   int n = CopyTicksRange(sym, ticks, COPY_TICKS_ALL, (ulong)from * 1000, (ulong)to * 1000);
+   int n = 0;
+   ulong t0 = GetTickCount();
+   while((GetTickCount() - t0) < 15000)
+   {
+      n = CopyTicksRange(sym, ticks, COPY_TICKS_ALL, (ulong)from * 1000, (ulong)to * 1000);
+      if(n > 0) break;
+      int err = GetLastError();
+      if(err != 0 && err != 4703) // 4703 = 資料尚未就绪，會继续重试；其他錯誤直接印出來
+         Print("  CopyTicksRange 錯誤碼: ", err);
+      Sleep(500);
+   }
    Print("CopyTicksRange 取得 ", n, " 筆 tick");
 
    if(n > 0)
@@ -68,14 +82,24 @@ void OnStart()
    }
    else
    {
-      Print("⚠️ 該區間沒有 tick 歷史（券商可能未提供該商品的tick資料）");
+      Print("⚠️ 等了15秒仍拿不到 tick（券商對這檔商品可能不保留這麼久的tick歷史，"
+            "或這個時間點確實沒有成交）。改用 1分K 當備援。");
    }
 
-   //--- 2) 匯出同區間的 1 分 K（tick 拿不到時的備援）
+   //--- 2) 匯出同區間的 1 分 K（tick 拿不到時的備援），同樣反覆呼叫觸發下載
    MqlRates m1[];
    ArraySetAsSeries(m1, false);
-   int nb = CopyRates(sym, PERIOD_M1, from - 300, to + 300, m1);
+   int nb = 0;
+   t0 = GetTickCount();
+   while((GetTickCount() - t0) < 15000)
+   {
+      nb = CopyRates(sym, PERIOD_M1, from - 300, to + 300, m1);
+      if(nb > 0) break;
+      Sleep(500);
+   }
    Print("CopyRates(M1) 取得 ", nb, " 根");
+   if(nb == 0)
+      Print("⚠️ 1分K 也拿不到——這個標的在這個時間點可能盤外、或終端機完全沒有這段歷史資料。");
    if(nb > 0)
    {
       string fn2 = "M1Window_" + sym + ".csv";
