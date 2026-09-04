@@ -8,3 +8,6 @@ data_mt5_us_30m/
 data_mt5_equities_cfd/
 data_tv_indices_5m/
 data_tv_intraday_5m/
+data_ibkr_5m/
+data_ibkr_spread/
+data_fx_1h/

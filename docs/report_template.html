@@ -1,0 +1,857 @@
+<title>網格策略 Top-8 貨幣對</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@600&display=swap">
+<style>
+  :root {
+    color-scheme: light;
+    --ground: #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #fbfcfd;
+    --ink: #0d1117;
+    --ink-2: #5a6472;
+    --ink-3: #8a94a3;
+    --accent: #2a78d6;
+    --accent-fill: rgba(42, 120, 214, 0.11);
+    --accent-weak: rgba(42, 120, 214, 0.28);
+    --loss: #c8342f;
+    --loss-fill: rgba(200, 52, 47, 0.10);
+    --rule: #e3e6ec;
+    --rule-soft: #eef0f4;
+    --shadow: 0 1px 2px rgba(13, 17, 23, .05), 0 8px 24px -16px rgba(13, 17, 23, .22);
+
+    --sans: "IBM Plex Sans", "PingFang TC", "Noto Sans TC", "Heiti TC", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", "PingFang TC", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --serif: "IBM Plex Serif", "Songti TC", "Noto Serif TC", Georgia, serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground: #101317;
+      --surface: #171b21;
+      --surface-2: #1b2027;
+      --ink: #eef1f5;
+      --ink-2: #9ba5b3;
+      --ink-3: #6b7684;
+      --accent: #3987e5;
+      --accent-fill: rgba(57, 135, 229, 0.16);
+      --accent-weak: rgba(57, 135, 229, 0.34);
+      --loss: #e66767;
+      --loss-fill: rgba(230, 103, 103, 0.14);
+      --rule: #272d35;
+      --rule-soft: #20252c;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -16px rgba(0, 0, 0, .8);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #101317;
+    --surface: #171b21;
+    --surface-2: #1b2027;
+    --ink: #eef1f5;
+    --ink-2: #9ba5b3;
+    --ink-3: #6b7684;
+    --accent: #3987e5;
+    --accent-fill: rgba(57, 135, 229, 0.16);
+    --accent-weak: rgba(57, 135, 229, 0.34);
+    --loss: #e66767;
+    --loss-fill: rgba(230, 103, 103, 0.14);
+    --rule: #272d35;
+    --rule-soft: #20252c;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -16px rgba(0, 0, 0, .8);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 14.5px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1140px; margin: 0 auto; padding: 44px 24px 88px; }
+
+  /* ---------- header ---------- */
+  header { border-bottom: 1px solid var(--rule); padding-bottom: 26px; }
+  .kicker {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 12px;
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 600; font-size: 31px; line-height: 1.25;
+    letter-spacing: -.01em; margin: 0 0 12px; text-wrap: balance;
+  }
+  .lede { margin: 0; max-width: 62ch; color: var(--ink-2); }
+  .runspec {
+    display: flex; flex-wrap: wrap; gap: 0 30px; margin-top: 22px;
+    font-family: var(--mono); font-size: 12px; color: var(--ink-2);
+  }
+  .runspec div { display: flex; gap: 7px; }
+  .runspec dt { color: var(--ink-3); }
+  .runspec dd { margin: 0; color: var(--ink); }
+
+  /* ---------- sections ---------- */
+  section { margin-top: 52px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 6px;
+  }
+  h2 { font-size: 18px; font-weight: 600; margin: 0 0 6px; letter-spacing: -.005em; }
+  .note { color: var(--ink-2); margin: 0 0 20px; max-width: 68ch; font-size: 13.5px; }
+
+  /* ---------- hero metrics ---------- */
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--rule);
+           border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; }
+  .tile { background: var(--surface); padding: 18px 20px 16px; }
+  .tile .lab { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+               text-transform: uppercase; color: var(--ink-3); }
+  .tile .val { font-family: var(--mono); font-size: 30px; font-weight: 500;
+               letter-spacing: -.02em; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .tile .sub { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+  .tile.is-loss .val { color: var(--loss); }
+
+  .support { display: flex; flex-wrap: wrap; gap: 6px 26px; margin-top: 14px;
+             font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+  .support b { color: var(--ink); font-weight: 500; }
+
+  /* ---------- charts ---------- */
+  .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 3px;
+           padding: 18px 18px 10px; margin-top: 18px; box-shadow: var(--shadow); }
+  .panel-head { display: flex; justify-content: space-between; align-items: baseline;
+                gap: 16px; flex-wrap: wrap; margin-bottom: 4px; }
+  .panel-title { font-size: 14px; font-weight: 600; }
+  .readout { font-family: var(--mono); font-size: 12px; color: var(--ink-2);
+             font-variant-numeric: tabular-nums; }
+  .readout b { color: var(--accent); font-weight: 500; }
+  .chart-holder { position: relative; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .ax { fill: var(--ink-3); font-family: var(--mono); font-size: 10px; }
+  .gridline { stroke: var(--rule-soft); stroke-width: 1; }
+  .zeroline { stroke: var(--ink-3); stroke-width: 1; opacity: .55; }
+
+  /* ---------- small multiples ---------- */
+  .sm-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+             background: var(--rule); border: 1px solid var(--rule); border-radius: 3px;
+             overflow: hidden; margin-top: 18px; }
+  .sm { background: var(--surface); padding: 12px 12px 6px; }
+  .sm-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .sm-name { font-family: var(--mono); font-size: 12.5px; font-weight: 500; letter-spacing: .02em; }
+  .sm-ann { font-family: var(--mono); font-size: 11.5px; font-variant-numeric: tabular-nums;
+            color: var(--accent); }
+  .sm-ann.neg { color: var(--loss); }
+  .sm-meta { font-family: var(--mono); font-size: 10px; color: var(--ink-3);
+             margin-top: 1px; font-variant-numeric: tabular-nums; }
+
+  /* ---------- table ---------- */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 3px;
+               background: var(--surface); margin-top: 18px; }
+  table { border-collapse: collapse; width: 100%; min-width: 880px; }
+  th, td { text-align: right; padding: 9px 13px; white-space: nowrap;
+           font-variant-numeric: tabular-nums; }
+  th {
+    position: sticky; top: 0; background: var(--surface-2); z-index: 1;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--ink-3); font-weight: 400; border-bottom: 1px solid var(--rule);
+    cursor: pointer; user-select: none;
+  }
+  th:hover { color: var(--ink); }
+  th[aria-sort] { color: var(--accent); }
+  th:focus-visible, tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  th.left, td.left { text-align: left; }
+  td { font-family: var(--mono); font-size: 12.5px; border-bottom: 1px solid var(--rule-soft); }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--surface-2); }
+  td.pair { font-weight: 500; letter-spacing: .02em; color: var(--ink); }
+  td.neg { color: var(--loss); }
+  .barcell { position: relative; }
+  .barcell .bar { position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+                  height: 15px; background: var(--accent-fill); border-left: 2px solid var(--accent-weak); }
+  .barcell.neg .bar { background: var(--loss-fill); border-left-color: var(--loss); }
+  .barcell span { position: relative; }
+  tfoot td { font-family: var(--mono); font-size: 12px; color: var(--ink-2);
+             border-top: 1px solid var(--rule); background: var(--surface-2); }
+
+  /* ---------- prose blocks ---------- */
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 18px; }
+  .block { border-left: 2px solid var(--rule); padding-left: 16px; }
+  .block h3 { font-size: 13.5px; font-weight: 600; margin: 0 0 7px; }
+  .block p, .block li { font-size: 13.5px; color: var(--ink-2); margin: 0 0 8px; }
+  .block ul { margin: 0; padding-left: 17px; }
+  .block li::marker { color: var(--ink-3); }
+  .block code { font-family: var(--mono); font-size: 12.5px; color: var(--ink);
+                background: var(--surface-2); padding: 1px 4px; border-radius: 2px; }
+  .flag { border-left-color: var(--loss); }
+
+  .callout { margin-top: 20px; padding: 15px 18px; background: var(--surface);
+             border: 1px solid var(--rule); border-left: 3px solid var(--accent);
+             border-radius: 3px; font-size: 13.5px; color: var(--ink-2); max-width: 74ch; }
+  .callout strong:first-child { display: block; color: var(--ink); font-size: 13px;
+                                margin-bottom: 5px; }
+  .callout code { font-family: var(--mono); font-size: 12.5px; color: var(--ink);
+                  background: var(--surface-2); padding: 1px 4px; border-radius: 2px; }
+
+  .money { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px;
+           background: var(--rule); border: 1px solid var(--rule); border-radius: 3px;
+           overflow: hidden; margin-top: 18px; }
+  .money > div { background: var(--surface); padding: 14px 18px; display: flex;
+                 justify-content: space-between; align-items: baseline; gap: 12px; }
+  .money .k { font-size: 13px; color: var(--ink-2); }
+  .money .v { font-family: var(--mono); font-size: 17px; font-weight: 500;
+              font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .money .v.big { font-size: 22px; color: var(--accent); }
+  .money .v.warn { color: var(--loss); }
+
+  footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--rule);
+           font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
+
+  /* ---------- freshness banner ---------- */
+  .fresh { display: flex; align-items: center; gap: 8px; margin-top: 18px;
+           font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); }
+  .fresh .dot { width: 7px; height: 7px; border-radius: 50%; background: #1baf7a; flex: none;
+                box-shadow: 0 0 0 3px rgba(27, 175, 122, .18); }
+  .fresh a { color: var(--accent); }
+
+  /* ---------- trade log ---------- */
+  .tradebar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 14px; }
+  .tradebar select, .tradebar input {
+    font-family: var(--mono); font-size: 12.5px; color: var(--ink); background: var(--surface);
+    border: 1px solid var(--rule); border-radius: 3px; padding: 6px 10px;
+  }
+  .tradebar input { width: 200px; }
+  .tradebar .count { font-family: var(--mono); font-size: 12px; color: var(--ink-3); margin-left: auto; }
+  td.side-long { color: #1baf7a; font-weight: 500; }
+  td.side-short { color: var(--loss); font-weight: 500; }
+  td.reason-sl { color: var(--loss); }
+  .pager { display: flex; align-items: center; gap: 10px; margin-top: 14px;
+           font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+  .pager button { font-family: var(--mono); font-size: 12px; color: var(--ink); background: var(--surface);
+                  border: 1px solid var(--rule); border-radius: 3px; padding: 5px 12px; cursor: pointer; }
+  .pager button:hover:not(:disabled) { background: var(--surface-2); }
+  .pager button:disabled { opacity: .4; cursor: default; }
+
+  .tooltip {
+    position: absolute; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--surface); border: 1px solid var(--rule); border-radius: 3px;
+    box-shadow: var(--shadow); padding: 7px 10px; font-family: var(--mono); font-size: 11.5px;
+    color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums; z-index: 5;
+  }
+  .tooltip .t-date { color: var(--ink-3); font-size: 10.5px; }
+
+  @media (max-width: 900px) {
+    .sm-grid { grid-template-columns: repeat(2, 1fr); }
+    .tiles { grid-template-columns: repeat(2, 1fr); }
+    .cols { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    .sm-grid { grid-template-columns: 1fr; }
+    h1 { font-size: 25px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="kicker">4H 自適應通道網格 · 外匯回測</p>
+    <h1>Sharpe 前 8 檔貨幣對績效</h1>
+    <p class="lede">
+      從 15 檔通過結構性篩選的貨幣對中，取 Sharpe 值最高的 8 檔，各自以 $25,000 獨立本金回測，
+      並模擬「單一帳戶同時交易這 8 檔」的共用資金池組合。成本含真實點差、佣金與隔夜利息，
+      止盈與 4 ATR 硬停損均按原始策略邏輯保留。
+    </p>
+    <p class="lede" style="margin-top:10px;">
+      <strong>先說一個必須看到的反面證據</strong>：同一份資料切成前 60%／後 40% 檢驗過，
+      用前段歷史排名挑出的最佳 6 檔，在後段樣本外的表現反而<strong>不如</strong>當初排名最差的 6 檔
+      （樣本內外 Sharpe 相關性 −0.03，等於零）。這 8 檔是用<strong>全樣本</strong>排出來的最佳結果，
+      本質上仍是「事後挑選」——請把下面的數字當成這批貨幣對的歷史特徵參考，而非對未來排名的保證。
+    </p>
+    <div class="callout">
+      <strong>v2 修正：跨幣別部位計算</strong>
+      舊版引擎用 <code>美元金額 ÷ 報價</code> 算部位，這個式子只有在計價貨幣是 USD 時才成立。
+      對 CADJPY 這類日圓計價交叉盤，算出來的單位數小了約 150 倍，無法直接換算成 MT5 手數。
+      v2 改為 <code>單位數 = 目標美元名目 ÷ 基礎貨幣美元匯率</code>，損益再經計價貨幣換算回美元，
+      並改用「手數 × $/手/日」精確計算隔夜利息、「手數 × $3/邊」計算佣金。
+      <strong>百分比報酬幾乎沒變</strong>（因為 損益÷投入 = 價格變動百分比，與幣別無關），
+      年化由 5.18% 微調為 4.98%——差額來自更精確的成本計算。真正的差別是：
+      下表的手數欄位現在是<strong>可以直接下單的真實手數</strong>。
+    </div>
+    <dl class="runspec">
+      <div><dt>週期</dt><dd>4H</dd></div>
+      <div><dt>樣本</dt><dd id="rs-range">—</dd></div>
+      <div><dt>本金</dt><dd>$25,000</dd></div>
+      <div><dt>首單</dt><dd>$1,500 · 最多 4 層 DCA</dd></div>
+      <div><dt>進場</dt><dd>EMA50 ± 2.0 ATR</dd></div>
+      <div><dt>停損</dt><dd>均價 ∓ 4.0 ATR</dd></div>
+    </dl>
+    <div class="fresh">
+      <span class="dot"></span>
+      <span>價格資料與回測結果每小時由 GitHub Actions 自動更新 · 最後更新 <b id="gen-at">—</b></span>
+      <span>· <a href="fx_trade_log.csv">下載完整交易明細 CSV</a></span>
+      <span>· <a href="https://github.com/evan7646-cloud/bollinger_meanreversion_equities">原始碼</a></span>
+    </div>
+  </header>
+
+  <section>
+    <p class="eyebrow">組合結果</p>
+    <h2>單一 $25,000 帳戶同時交易 Top-8</h2>
+    <p class="note">
+      成本已改用 MT5 broker 過去 7 天、每天 48 個時段的真實歷史點差取樣（中位數）+ 真實隔夜利息，
+      不再是估計值。比全部 15 檔的組合更集中：年化報酬較低（4.98% vs 6.00%），但 MDD 更小
+      （3.31% vs 6.01%）、Sharpe 更高（1.99 vs 1.36）、Calmar 更高（1.50 vs 1.00），
+      且峰值動用資金從 221% 降到 121%——少槓桿換來更好的風險調整後報酬。
+    </p>
+    <div class="tiles" id="tiles"></div>
+    <div class="support" id="support"></div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">組合權益曲線</span>
+        <span class="readout" id="port-readout">滑過曲線可讀取任一時點數值</span>
+      </div>
+      <div class="chart-holder" id="port-holder">
+        <svg id="port-chart" viewBox="0 0 1000 320" role="img"
+             aria-label="組合權益曲線，期間總報酬 +14.46%，最大回撤 3.31%"></svg>
+        <div class="tooltip" id="port-tip"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">逐檔績效</p>
+    <h2>Top-8 貨幣對完整指標</h2>
+    <p class="note">
+      預設依 Sharpe 由高至低排列（本次篩選依據）。點選欄位標題可改變排序，例如切到 Calmar 檢查另一種風險調整角度。
+    </p>
+    <div class="tablewrap">
+      <table id="perf-table">
+        <thead><tr id="thead-row"></tr></thead>
+        <tbody id="perf-body"></tbody>
+        <tfoot id="perf-foot"></tfoot>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">交易明細</p>
+    <h2>每一筆進出場紀錄</h2>
+    <p class="note">
+      每筆交易的進場時間/價格、出場時間/價格、出場原因（止盈/停損）、層數、手數與損益。
+      進場價格為第 1 層價格，均價欄位是含 DCA 加碼後的最終持倉均價。可依貨幣對篩選、關鍵字搜尋、點欄位排序。
+    </p>
+    <div class="tradebar">
+      <select id="trade-pair"><option value="">全部貨幣對</option></select>
+      <select id="trade-reason">
+        <option value="">止盈＋停損</option>
+        <option value="TP">只看止盈</option>
+        <option value="SL">只看停損</option>
+      </select>
+      <input id="trade-search" type="text" placeholder="搜尋日期，如 2026-08">
+      <span class="count" id="trade-count">—</span>
+    </div>
+    <div class="tablewrap">
+      <table id="trade-table">
+        <thead><tr id="trade-thead"></tr></thead>
+        <tbody id="trade-body"></tbody>
+      </table>
+    </div>
+    <div class="pager">
+      <button id="trade-prev">← 上一頁</button>
+      <span id="trade-pageinfo">—</span>
+      <button id="trade-next">下一頁 →</button>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">權益曲線</p>
+    <h2>逐檔小倍數圖 · 共用縱軸刻度</h2>
+    <p class="note">
+      8 個面板共用同一縱軸範圍，因此高度可直接互相比較。USDCHF、EURAUD、GBPAUD 三檔的可取得資料較短，
+      曲線起點因此較晚，屬實際資料限制而非策略空手。滑過任一面板可讀取該時點數值。
+    </p>
+    <div class="sm-grid" id="sm-grid"></div>
+  </section>
+
+  <section>
+    <p class="eyebrow">資金規模推算</p>
+    <h2>$100,000 帳戶一年可以賺多少</h2>
+    <p class="note">
+      部位等比放大（首單名目由 $1,500 提高到 $6,000，即淨值的 6%），報酬率不變。
+      外匯市場流動性極高，這個量級不會改變真實點差成本，線性外推是合理假設。
+      放大後手數也更適合實盤——中位數從 0.022 手變成 0.086 手，四捨五入到 0.01 的誤差從 7% 降到 5%。
+    </p>
+    <div class="money" id="money"></div>
+    <p class="note" style="margin-top:16px;">
+      信心區間由 Sharpe 反推年化波動度得出（4.98% ÷ 1.99 ≈ 2.50%）。這只反映 2.78 年觀測樣本內的波動，
+      <strong>不包含樣本期間沒發生的外匯危機</strong>（2015 瑞郎脫鉤單日 30%、2022 英鎊迷你預算崩盤）。
+      跳空行情下 4 ATR 停損無法保證在停損價成交，實際虧損可能遠超過歷史 MDD。
+    </p>
+  </section>
+
+  <section>
+    <p class="eyebrow">實盤部署</p>
+    <h2>MT5 EA：ChannelGridDCA_EA.mq5</h2>
+    <p class="note">
+      已依上述邏輯寫成 EA 並放進 <code>MQL5/Experts/</code>。掛在任一張圖表上即可同時管理 8 檔貨幣對。
+    </p>
+    <div class="cols">
+      <div class="block">
+        <h3>手數計算（回測 v2 修正的重點）</h3>
+        <p>
+          EA 用 <code>1手名目 = (tick_value ÷ tick_size) × 現價</code> 換算手數。
+          <code>tick_value</code> 由 MT5 直接提供且<strong>已含跨幣別轉換</strong>，
+          所以 AUDCAD、CADJPY 這類交叉盤會得到正確手數，不會重蹈 Python 引擎 v1 的錯誤。
+          手數向下取整到經紀商的 lot step，避免超額下單。
+        </p>
+      </div>
+      <div class="block">
+        <h3>風控機制</h3>
+        <ul>
+          <li><strong>硬停損掛在經紀商端</strong>，DCA 加碼後自動隨新均價移動——
+            斷線也受保護。EA 啟動時會檢查 <code>InpStopAtr</code>，設為 0 直接拒絕啟動。</li>
+          <li><strong>點差過濾</strong>：即時點差超過該對中位數的 3 倍時禁止新開倉。
+            實測資料顯示極端時段點差可達中位數的 10~40 倍。</li>
+          <li><strong>總名目上限</strong>：所有部位名目合計不超過淨值的 60%（預設）。</li>
+        </ul>
+      </div>
+      <div class="block">
+        <h3>非重繪設計</h3>
+        <p>
+          EMA50 / ATR20 一律讀取<strong>已收盤</strong>的 H4 K 棒（shift=1），觸價判斷則用即時 Bid/Ask，
+          與回測「用 K 棒高低點判斷觸價」的邏輯一致，且不會有指標重繪造成的回測—實盤落差。
+        </p>
+      </div>
+      <div class="block">
+        <h3>啟動前要做的事</h3>
+        <ul>
+          <li>MetaEditor 按 F7 編譯，確認 0 errors。</li>
+          <li>確認經紀商的品種代碼（若有 <code>.r</code>／<code>+</code> 等後綴需修改 <code>InpSymbols</code>）。</li>
+          <li><strong>先用模擬帳戶跑至少一個月</strong>，比對成交紀錄與回測邏輯是否吻合。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">方法與限制</p>
+    <h2>這份數字怎麼算出來的</h2>
+    <div class="cols">
+      <div class="block flag">
+        <h3>這 8 檔是怎麼選出來的</h3>
+        <ul>
+          <li>第一層結構性篩選（15 檔）：排除 <code>ATR ÷ 點差 &lt; 10</code> 的 EURGBP、NZDUSD，
+            以及長期受 SNB 干預壓抑波動的 EURCHF。</li>
+          <li>第二層（這份報告）：取 15 檔中<strong>全樣本 Sharpe 最高的 8 檔</strong>——
+            AUDCAD、AUDNZD、NZDCAD、CADJPY、AUDUSD、GBPAUD、USDCHF、EURAUD。</li>
+          <li>這一層是<strong>依歷史績效排名挑選</strong>，而樣本內/外切分測試顯示這類排名的樣本外相關性
+            接近零（−0.03）。換句話說，沒有證據保證這 8 檔在未來仍會是表現最好的 8 檔。</li>
+        </ul>
+      </div>
+      <div class="block">
+        <h3>策略設定</h3>
+        <ul>
+          <li>雙向交易：跌破下軌做多、突破上軌做空，外匯無股票的長期向上漂移，多空對稱。</li>
+          <li>止盈取 <code>min(EMA50, 均價 + 1 ATR)</code>——較原版更近的目標，但<strong>硬停損完整保留</strong>。</li>
+          <li>成本：MT5 broker 過去 7 天、每天 48 個時段取樣的真實歷史點差中位數
+            + ECN 佣金 + 真實隔夜利息（週三三倍）——不是估計值，是從 MQL5 腳本
+            <code>ExportForexRealCosts.mq5</code> 實際拉取的歷史 tick 統計。</li>
+          <li>穩健性：改用悲觀盤中撮合假設（同根 K 棒優先觸發停損）結果完全相同。</li>
+        </ul>
+      </div>
+      <div class="block flag">
+        <h3>樣本限制</h3>
+        <p>
+          僅 2.3–2.8 年資料，未涵蓋真正的外匯危機情境（2015 瑞郎脫鉤、2022 英鎊迷你預算崩盤）。
+          對 DCA 加倉結構而言那才是致命傷——跳空行情中 4 ATR 停損無法保證成交在停損價。
+        </p>
+      </div>
+      <div class="block flag">
+        <h3>兩個必須說清楚的數字</h3>
+        <ul>
+          <li>組合的峰值動用資金達本金 <strong>121%</strong>，屬保證金槓桿而非現金交易（全部 15 檔版本是 221%）。</li>
+          <li>手數落在 0.012~0.032 之間，需向下取整到經紀商的 0.01 lot step，
+            造成約 5~15% 的部位偏差（$100,000 帳戶下降到 5% 以內）。回測未模擬這個取整誤差。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer id="foot">—</footer>
+</div>
+
+<script>
+const DATA = /*__DATA__*/null;
+
+/* ---------------- helpers ---------------- */
+const fmt = (v, d = 2) => (v >= 0 ? "" : "−") + Math.abs(v).toFixed(d);
+const pct = (v, d = 2) => fmt(v, d) + "%";
+const el = (tag, cls, txt) => { const n = document.createElement(tag);
+  if (cls) n.className = cls; if (txt !== undefined) n.textContent = txt; return n; };
+const svgEl = (tag, attrs) => { const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]); return n; };
+
+document.getElementById("rs-range").textContent = DATA.meta.start + " → " + DATA.meta.end;
+document.getElementById("gen-at").textContent = DATA.meta.generated_at || "—";
+
+/* ---------------- hero tiles ---------------- */
+const P = DATA.portfolio;
+const tileDefs = [
+  { lab: "年化報酬", val: pct(P.ann), sub: "總報酬 " + pct(P.total) + " ／ " + P.years + " 年" },
+  { lab: "最大回撤", val: pct(P.mdd), sub: "谷底發生於樣本前段", loss: true },
+  { lab: "Sharpe", val: fmt(P.sharpe), sub: "以 4H 報酬年化" },
+  { lab: "Calmar", val: fmt(P.calmar), sub: "年化報酬 ÷ 最大回撤" },
+];
+const tiles = document.getElementById("tiles");
+tileDefs.forEach(t => {
+  const d = el("div", "tile" + (t.loss ? " is-loss" : ""));
+  d.append(el("div", "lab", t.lab), el("div", "val", t.val), el("div", "sub", t.sub));
+  tiles.append(d);
+});
+/* ---------------- $100K 推算 ---------------- */
+(function () {
+  const CAP = 100000;
+  const vol = P.ann / P.sharpe;                 // Sharpe 反推年化波動度
+  const money = document.getElementById("money");
+  const usd = v => "$" + Math.round(v).toLocaleString();
+  const rows = [
+    ["預期年化獲利", usd(CAP * P.ann / 100), "big"],
+    ["年化波動度（Sharpe 反推）", pct(vol) + " ≈ " + usd(CAP * vol / 100), ""],
+    ["68% 信心區間（±1σ）", usd(CAP * (P.ann - vol) / 100) + " ~ " + usd(CAP * (P.ann + vol) / 100), ""],
+    ["95% 信心區間（±2σ）", usd(CAP * (P.ann - 2 * vol) / 100) + " ~ " + usd(CAP * (P.ann + 2 * vol) / 100), ""],
+    ["歷史最深回撤（帳面浮虧）", "−" + usd(CAP * P.mdd / 100), "warn"],
+    ["峰值需要的保證金曝險", usd(CAP * P.peakDep / 100), ""],
+    ["首單名目金額（淨值 6%）", usd(CAP * 0.06), ""],
+    ["首單手數（中位／滿倉）", (P.lots * 4).toFixed(3) + " ／ " + (P.maxlots * 4).toFixed(3) + " 手", ""],
+  ];
+  rows.forEach(([k, v, cls]) => {
+    const d = el("div");
+    d.append(el("span", "k", k), el("span", "v" + (cls ? " " + cls : ""), v));
+    money.append(d);
+  });
+})();
+
+document.getElementById("support").innerHTML =
+  `<span>勝率 <b>${P.win}%</b></span><span>交易數 <b>${P.trades.toLocaleString()}</b></span>` +
+  `<span>平均動用資金 <b>${P.avgDep}%</b></span><span>峰值動用資金 <b>${P.peakDep}%</b></span>` +
+  `<span>檔數 <b>${DATA.meta.n}</b></span>`;
+
+/* ---------------- portfolio chart ---------------- */
+(function () {
+  const svg = document.getElementById("port-chart");
+  const c = P.curve, n = c.length;
+  const W = 1000, H = 320, mL = 54, mR = 18, mT = 14, mB = 32;
+  const iw = W - mL - mR, ih = H - mT - mB;
+
+  let lo = Math.min(...c), hi = Math.max(...c);
+  const pad = (hi - lo) * 0.10; lo -= pad; hi += pad;
+  const X = i => mL + (i / (n - 1)) * iw;
+  const Y = v => mT + (1 - (v - lo) / (hi - lo)) * ih;
+
+  const ticks = [];
+  const stepRaw = (hi - lo) / 4;
+  const mag = Math.pow(10, Math.floor(Math.log10(stepRaw)));
+  const step = Math.ceil(stepRaw / mag) * mag;
+  for (let t = Math.ceil(lo / step) * step; t <= hi; t += step) ticks.push(+t.toFixed(6));
+
+  ticks.forEach(t => {
+    svg.append(svgEl("line", { x1: mL, x2: W - mR, y1: Y(t), y2: Y(t),
+      class: t === 0 ? "zeroline" : "gridline" }));
+    const lb = svgEl("text", { x: mL - 9, y: Y(t) + 3.5, "text-anchor": "end", class: "ax" });
+    lb.textContent = fmt(t, 0) + "%";
+    svg.append(lb);
+  });
+
+  const dts = DATA.meta.dates;
+  [0, Math.floor(n / 3), Math.floor(2 * n / 3), n - 1].forEach((i, k) => {
+    const di = Math.min(dts.length - 1, Math.round(i * (dts.length - 1) / (n - 1)));
+    const lb = svgEl("text", { x: X(i), y: H - mB + 18, class: "ax",
+      "text-anchor": k === 0 ? "start" : (k === 3 ? "end" : "middle") });
+    lb.textContent = dts[di].slice(0, 7);
+    svg.append(lb);
+  });
+
+  const line = c.map((v, i) => (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1)).join(" ");
+  svg.append(svgEl("path", { d: line + ` L ${X(n - 1).toFixed(1)} ${Y(Math.max(lo, 0))} L ${X(0).toFixed(1)} ${Y(Math.max(lo, 0))} Z`,
+    fill: "var(--accent-fill)", stroke: "none" }));
+  svg.append(svgEl("path", { d: line, fill: "none", stroke: "var(--accent)",
+    "stroke-width": 2, "stroke-linejoin": "round" }));
+
+  let peak = -Infinity, tIdx = 0, worst = 0;
+  c.forEach((v, i) => { peak = Math.max(peak, v);
+    const dd = (100 + v) / (100 + peak) - 1; if (dd < worst) { worst = dd; tIdx = i; } });
+  svg.append(svgEl("circle", { cx: X(tIdx), cy: Y(c[tIdx]), r: 4.5, fill: "var(--loss)",
+    stroke: "var(--surface)", "stroke-width": 2 }));
+  const ddl = svgEl("text", { x: X(tIdx) + 10, y: Y(c[tIdx]) + 15, class: "ax", fill: "var(--loss)" });
+  ddl.textContent = "最大回撤 " + pct(P.mdd);
+  svg.append(ddl);
+
+  svg.append(svgEl("circle", { cx: X(n - 1), cy: Y(c[n - 1]), r: 4, fill: "var(--accent)",
+    stroke: "var(--surface)", "stroke-width": 2 }));
+  const endl = svgEl("text", { x: X(n - 1) - 6, y: Y(c[n - 1]) - 12, class: "ax",
+    "text-anchor": "end", fill: "var(--ink)" });
+  endl.textContent = "+" + pct(P.total);
+  svg.append(endl);
+
+  const cross = svgEl("line", { class: "gridline", stroke: "var(--accent-weak)",
+    "stroke-width": 1, y1: mT, y2: mT + ih, opacity: 0 });
+  const dot = svgEl("circle", { r: 3.5, fill: "var(--accent)", stroke: "var(--surface)",
+    "stroke-width": 2, opacity: 0 });
+  svg.append(cross, dot);
+  const hit = svgEl("rect", { x: mL, y: mT, width: iw, height: ih, fill: "transparent" });
+  svg.append(hit);
+
+  const tip = document.getElementById("port-tip");
+  const holder = document.getElementById("port-holder");
+  const readout = document.getElementById("port-readout");
+  const move = ev => {
+    const r = svg.getBoundingClientRect();
+    const px = (ev.clientX - r.left) / r.width * W;
+    let i = Math.round((px - mL) / iw * (n - 1));
+    i = Math.max(0, Math.min(n - 1, i));
+    cross.setAttribute("x1", X(i)); cross.setAttribute("x2", X(i));
+    cross.setAttribute("opacity", 1);
+    dot.setAttribute("cx", X(i)); dot.setAttribute("cy", Y(c[i])); dot.setAttribute("opacity", 1);
+    const di = Math.min(dts.length - 1, Math.round(i * (dts.length - 1) / (n - 1)));
+    readout.innerHTML = `${dts[di]} ／ 累積報酬 <b>${pct(c[i])}</b>`;
+    tip.innerHTML = `<div class="t-date">${dts[di]}</div>累積報酬 ${pct(c[i])}`;
+    const hr = holder.getBoundingClientRect();
+    tip.style.opacity = 1;
+    tip.style.left = Math.min(hr.width - 130, Math.max(0, (X(i) / W) * hr.width + 12)) + "px";
+    tip.style.top = ((Y(c[i]) / H) * hr.height - 12) + "px";
+  };
+  svg.addEventListener("mousemove", move);
+  svg.addEventListener("mouseleave", () => {
+    tip.style.opacity = 0; cross.setAttribute("opacity", 0); dot.setAttribute("opacity", 0);
+    readout.textContent = "滑過曲線可讀取任一時點數值";
+  });
+})();
+
+/* ---------------- table ---------------- */
+const COLS = [
+  { k: "name", t: "貨幣對", cls: "left", f: v => v },
+  { k: "ann", t: "年化報酬", f: v => pct(v) },
+  { k: "mdd", t: "最大回撤", f: v => pct(v) },
+  { k: "sharpe", t: "Sharpe", f: v => fmt(v) },
+  { k: "calmar", t: "Calmar", f: v => fmt(v), bar: true },
+  { k: "total", t: "總報酬", f: v => pct(v) },
+  { k: "win", t: "勝率", f: v => v.toFixed(1) + "%" },
+  { k: "pf", t: "獲利因子", f: v => fmt(v) },
+  { k: "trades", t: "交易數", f: v => v },
+  { k: "sl", t: "停損次數", f: v => v },
+  { k: "lots", t: "首單手數", f: v => v.toFixed(3) },
+  { k: "maxlots", t: "滿倉手數", f: v => v.toFixed(3) },
+];
+const headRow = document.getElementById("thead-row");
+COLS.forEach(col => {
+  const th = el("th", col.cls || "", col.t);
+  th.tabIndex = 0;
+  const act = () => sortBy(col.k);
+  th.addEventListener("click", act);
+  th.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); act(); } });
+  headRow.append(th);
+});
+
+let sortKey = "sharpe", sortDir = -1;
+const maxCalmar = Math.max(...DATA.pairs.map(p => p.calmar));
+function render() {
+  const rows = [...DATA.pairs].sort((a, b) =>
+    (typeof a[sortKey] === "string" ? a[sortKey].localeCompare(b[sortKey]) : a[sortKey] - b[sortKey]) * sortDir);
+  const body = document.getElementById("perf-body");
+  body.innerHTML = "";
+  rows.forEach(p => {
+    const tr = el("tr");
+    COLS.forEach(col => {
+      const v = p[col.k];
+      const td = el("td", (col.cls || "") + (col.k === "name" ? " pair" : "") +
+        (typeof v === "number" && v < 0 && col.k !== "name" ? " neg" : "") +
+        (col.bar ? " barcell" + (v < 0 ? " neg" : "") : ""));
+      if (col.bar) {
+        const bar = el("div", "bar");
+        bar.style.width = Math.max(2, Math.abs(v) / maxCalmar * 78) + "%";
+        td.append(bar, el("span", "", col.f(v)));
+      } else td.textContent = col.f(v);
+      tr.append(td);
+    });
+    body.append(tr);
+  });
+  [...headRow.children].forEach((th, i) => {
+    if (COLS[i].k === sortKey) th.setAttribute("aria-sort", sortDir === -1 ? "descending" : "ascending");
+    else th.removeAttribute("aria-sort");
+  });
+}
+function sortBy(k) {
+  if (k === sortKey) sortDir *= -1;
+  else { sortKey = k; sortDir = k === "name" ? 1 : -1; }
+  render();
+}
+render();
+
+const avg = k => DATA.pairs.reduce((s, p) => s + p[k], 0) / DATA.pairs.length;
+const foot = document.getElementById("perf-foot");
+const ftr = el("tr");
+const fvals = [DATA.meta.n + " 檔平均", pct(avg("ann")), pct(avg("mdd")), fmt(avg("sharpe")), fmt(avg("calmar")),
+  pct(avg("total")), avg("win").toFixed(1) + "%", fmt(avg("pf")), Math.round(avg("trades")),
+  Math.round(avg("sl")), avg("lots").toFixed(3), avg("maxlots").toFixed(3)];
+fvals.forEach((v, i) => ftr.append(el("td", i === 0 ? "left" : "", v)));
+foot.append(ftr);
+
+/* ---------------- 交易明細 ---------------- */
+(function () {
+  const ALL = DATA.trades || [];
+  const TCOLS = [
+    { k: "pair", t: "貨幣對", cls: "left" },
+    { k: "side", t: "方向" },
+    { k: "entry_time", t: "進場時間", cls: "left" },
+    { k: "entry_price", t: "進場價", f: v => v.toFixed(5) },
+    { k: "avg_entry", t: "均價", f: v => v.toFixed(5) },
+    { k: "exit_time", t: "出場時間", cls: "left" },
+    { k: "exit_price", t: "出場價", f: v => v.toFixed(5) },
+    { k: "reason", t: "原因" },
+    { k: "layers", t: "層數" },
+    { k: "lots", t: "手數", f: v => v.toFixed(3) },
+    { k: "pnl", t: "損益($)", f: v => (v >= 0 ? "+" : "") + v.toFixed(2) },
+    { k: "hold", t: "持倉根數" },
+  ];
+  const thead = document.getElementById("trade-thead");
+  TCOLS.forEach(c => thead.append(el("th", c.cls || "", c.t)));
+
+  const pairSel = document.getElementById("trade-pair");
+  [...new Set(ALL.map(t => t.pair))].sort().forEach(p => {
+    const o = document.createElement("option"); o.value = p; o.textContent = p;
+    pairSel.append(o);
+  });
+  const reasonSel = document.getElementById("trade-reason");
+  const search = document.getElementById("trade-search");
+  const body = document.getElementById("trade-body");
+  const countEl = document.getElementById("trade-count");
+  const pageInfo = document.getElementById("trade-pageinfo");
+  const prevBtn = document.getElementById("trade-prev");
+  const nextBtn = document.getElementById("trade-next");
+
+  const PAGE_SIZE = 40;
+  let page = 0;
+  let filtered = ALL;
+
+  function applyFilter() {
+    const p = pairSel.value, r = reasonSel.value, q = search.value.trim().toLowerCase();
+    filtered = ALL.filter(t =>
+      (!p || t.pair === p) && (!r || t.reason === r) &&
+      (!q || t.entry_time.toLowerCase().includes(q) || t.exit_time.toLowerCase().includes(q)));
+    page = 0;
+    renderPage();
+  }
+
+  function renderPage() {
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    page = Math.max(0, Math.min(page, totalPages - 1));
+    const rows = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+    body.innerHTML = "";
+    rows.forEach(t => {
+      const tr = el("tr");
+      TCOLS.forEach(c => {
+        let v = t[c.k];
+        const td = el("td", c.cls || "");
+        if (c.k === "side") td.className += t.side === "LONG" ? " side-long" : " side-short";
+        if (c.k === "reason" && t.reason === "SL") td.className += " reason-sl";
+        if (c.k === "pnl") td.className += (v < 0 ? " neg" : "");
+        td.textContent = c.f ? c.f(v) : v;
+        tr.append(td);
+      });
+      body.append(tr);
+    });
+    countEl.textContent = `共 ${filtered.length.toLocaleString()} 筆`;
+    pageInfo.textContent = `第 ${page + 1} / ${totalPages} 頁`;
+    prevBtn.disabled = page === 0;
+    nextBtn.disabled = page >= totalPages - 1;
+  }
+
+  pairSel.addEventListener("change", applyFilter);
+  reasonSel.addEventListener("change", applyFilter);
+  search.addEventListener("input", applyFilter);
+  prevBtn.addEventListener("click", () => { page--; renderPage(); });
+  nextBtn.addEventListener("click", () => { page++; renderPage(); });
+
+  applyFilter();
+})();
+
+/* ---------------- small multiples ---------------- */
+(function () {
+  const grid = document.getElementById("sm-grid");
+  const all = DATA.pairs.flatMap(p => p.curve.filter(v => v !== null));
+  let lo = Math.min(...all), hi = Math.max(...all);
+  const pad = (hi - lo) * 0.12; lo -= pad; hi += pad;
+
+  const W = 240, H = 96, mL = 30, mR = 6, mT = 6, mB = 16;
+  const iw = W - mL - mR, ih = H - mT - mB;
+  const dts = DATA.meta.dates;
+
+  DATA.pairs.forEach(p => {
+    const n = p.curve.length;
+    const X = i => mL + (i / (n - 1)) * iw;
+    const Y = v => mT + (1 - (v - lo) / (hi - lo)) * ih;
+
+    const card = el("div", "sm");
+    const head = el("div", "sm-head");
+    head.append(el("span", "sm-name", p.name),
+                el("span", "sm-ann" + (p.ann < 0 ? " neg" : ""), pct(p.ann)));
+    const meta = el("div", "sm-meta");
+    meta.textContent = `MDD ${pct(p.mdd)} · Sharpe ${fmt(p.sharpe)} · Calmar ${fmt(p.calmar)}`;
+    card.append(head, meta);
+
+    const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img",
+      "aria-label": `${p.name} 權益曲線，年化 ${pct(p.ann)}，最大回撤 ${pct(p.mdd)}` });
+
+    [0, Math.round(hi)].forEach(t => {
+      if (t < lo || t > hi) return;
+      svg.append(svgEl("line", { x1: mL, x2: W - mR, y1: Y(t), y2: Y(t),
+        class: t === 0 ? "zeroline" : "gridline" }));
+      const lb = svgEl("text", { x: mL - 6, y: Y(t) + 3, "text-anchor": "end", class: "ax" });
+      lb.textContent = t + "%";
+      svg.append(lb);
+    });
+
+    let d = "", started = false, firstI = 0;
+    p.curve.forEach((v, i) => {
+      if (v === null) return;
+      if (!started) { firstI = i; d += `M ${X(i).toFixed(1)} ${Y(v).toFixed(1)}`; started = true; }
+      else d += ` L ${X(i).toFixed(1)} ${Y(v).toFixed(1)}`;
+    });
+    const lastI = n - 1;
+    svg.append(svgEl("path", { d: d + ` L ${X(lastI).toFixed(1)} ${Y(Math.max(lo, 0))} L ${X(firstI).toFixed(1)} ${Y(Math.max(lo, 0))} Z`,
+      fill: "var(--accent-fill)", stroke: "none" }));
+    svg.append(svgEl("path", { d, fill: "none", stroke: "var(--accent)",
+      "stroke-width": 1.6, "stroke-linejoin": "round" }));
+
+    const dot = svgEl("circle", { r: 3, fill: "var(--accent)", stroke: "var(--surface)",
+      "stroke-width": 1.5, opacity: 0 });
+    svg.append(dot);
+    const hit = svgEl("rect", { x: mL, y: mT, width: iw, height: ih, fill: "transparent" });
+    svg.append(hit);
+
+    const base = meta.textContent;
+    svg.addEventListener("mousemove", ev => {
+      const r = svg.getBoundingClientRect();
+      let i = Math.round(((ev.clientX - r.left) / r.width * W - mL) / iw * (n - 1));
+      i = Math.max(firstI, Math.min(n - 1, i));
+      if (p.curve[i] === null) return;
+      dot.setAttribute("cx", X(i)); dot.setAttribute("cy", Y(p.curve[i]));
+      dot.setAttribute("opacity", 1);
+      const di = Math.min(dts.length - 1, Math.round(i * (dts.length - 1) / (n - 1)));
+      meta.textContent = `${dts[di]} · 累積 ${pct(p.curve[i])}`;
+    });
+    svg.addEventListener("mouseleave", () => { dot.setAttribute("opacity", 0); meta.textContent = base; });
+
+    card.append(svg);
+    grid.append(card);
+  });
+})();
+
+document.getElementById("foot").textContent =
+  `資料：Yahoo Finance 1H 報價（每小時由 GitHub Actions 自動重新抓取）重採樣為 4H · ` +
+  `成本表 mt5_forex_real_costs.csv（MT5 broker 真實歷史點差，手動更新）· ` +
+  `回測程式 fx_engine_v2.py ／ fx_portfolio_v2.py · 樣本 ${DATA.meta.start} 至 ${DATA.meta.end} · ` +
+  `共 ${DATA.meta.n_trades.toLocaleString()} 筆交易`;
+</script>

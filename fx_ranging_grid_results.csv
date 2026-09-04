@@ -1,0 +1,6 @@
+Currency Pair,Spread (bps),Pair Drift %,Grid Total Ret %,Grid MaxDD %,Sharpe Ratio,Total Trades,Friction Drag ($)
+AUDNZD,2.2,13.55,-1.04,-2.49,-0.34,200,94.1
+EURGBP,1.5,-0.93,1.28,-0.97,0.44,161,57.1
+EURCHF,1.8,1.32,1.38,-1.46,0.42,191,80.0
+USDCAD,1.6,4.14,3.35,-2.01,1.08,275,102.1
+EURUSD,0.8,5.17,1.61,-1.98,0.39,329,69.2
