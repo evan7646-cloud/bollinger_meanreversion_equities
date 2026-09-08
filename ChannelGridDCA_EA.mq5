@@ -3,23 +3,18 @@
 //|                            通道均值回歸 DCA 網格 EA（多貨幣對版）  |
 //|                                                                  |
 //|  對應回測：fx_engine_v2.py / fx_portfolio_v2.py（網頁為準）        |
-//|  驗證績效（2.78年真實歷史、真實點差）：                            |
-//|    年化 4.98% · MDD 3.31% · Sharpe 1.99 · Calmar 1.50 · 勝率 93.3%|
+//|  資料來源：TradingView 的 Pepperstone 報價，已轉換成 MT5 broker 時間|
 //+------------------------------------------------------------------+
 #property copyright "Grid Strategy Project"
-#property version   "2.00"
+#property version   "3.00"
 #property description "通道均值回歸 DCA 網格：跌破 EMA50-2ATR 做多、突破 EMA50+2ATR 做空，"
 #property description "最多 4 層 DCA，止盈 min(EMA50, 均價+1ATR)，硬停損 均價-4ATR。"
 #property description "手數以帳戶幣別名目金額換算（正確處理交叉盤跨幣別），非固定手數。"
-#property description "v2：EMA/ATR 改成自己用 M15 資料組出「UTC 對齊」的 4H K棒計算，"
-#property description "不用 MT5 內建 H4（那是照 broker 伺服器時區切的），才能跟 Python 回測完全對上。"
+#property description "v3：改回用 MT5 內建 PERIOD_H4 算 EMA/ATR（v2 曾經自建 UTC 對齊4H，"
+#property description "現在 Python 回測改成直接對齊 MT5 broker 時間，兩邊統一用 broker 時區，"
+#property description "MT5 原生 H4 本來就是照 broker 伺服器時間切的，不需要再自己組K棒）。"
 
 #include <Trade/Trade.mqh>
-
-//--- 時區對齊（跟 Python 回測對上的關鍵）
-input group "═══ 時區對齊 ═══"
-input double InpBrokerGmtOffsetHours = 3.0;  // broker 伺服器時間 - UTC 的小時差（例：UTC+3 就填 3）
-input int    InpHistoryDays          = 60;   // 往回抓幾天的 M15 資料來組 4H K棒與計算 EMA/ATR
 
 //--- 交易標的與資金
 input group "═══ 標的與資金 ═══"
@@ -55,142 +50,9 @@ input bool   InpVerboseLog     = true;      // 詳細日誌
 CTrade         trade;
 string         g_syms[];
 double         g_median_spread[];
-datetime       g_cached_bucket[];   // 每檔目前快取指標對應的「UTC 4H bucket 開始時間」
-double         g_cached_ema[];
-double         g_cached_atr[];
+int            g_ema_handle[];
+int            g_atr_handle[];
 int            g_count = 0;
-
-//+------------------------------------------------------------------+
-//| UTC 對齊的 4H K棒                                                 |
-//+------------------------------------------------------------------+
-struct H4Bar { datetime t; double o, h, l, c; };
-
-//+------------------------------------------------------------------+
-//| 把 broker 伺服器時間轉成 UTC（用使用者填的固定時差，不依賴OS時鐘） |
-//+------------------------------------------------------------------+
-datetime ServerToUtc(datetime server_time)
-{
-   return server_time - (datetime)MathRound(InpBrokerGmtOffsetHours * 3600.0);
-}
-
-//+------------------------------------------------------------------+
-//| 用 M15 原始資料組出「UTC 對齊、已收盤」的 4H K棒陣列               |
-//| 最後一個尚未走完的 4H bucket 不會被放進來（避免用未收盤K棒算指標） |
-//+------------------------------------------------------------------+
-int BuildUtc4hBars(string sym, H4Bar &bars[])
-{
-   ArrayResize(bars, 0);
-   MqlRates rates[];
-   ArraySetAsSeries(rates, false);
-   int need = InpHistoryDays * 24 * 4;   // M15 根數
-   int n = CopyRates(sym, PERIOD_M15, 0, need, rates);
-   if(n <= 1) return 0;
-
-   const long BUCKET_SEC = 4 * 3600;
-   datetime cur_bucket = 0;
-   H4Bar cur;
-   bool have_cur = false;
-
-   for(int i = 0; i < n; i++)
-   {
-      datetime utc_t = ServerToUtc(rates[i].time);
-      datetime bucket = (datetime)((long)utc_t / BUCKET_SEC * BUCKET_SEC);
-
-      if(!have_cur || bucket != cur_bucket)
-      {
-         if(have_cur)   // 把「上一個已經走完的 bucket」存進陣列
-         {
-            int sz = ArraySize(bars);
-            ArrayResize(bars, sz + 1);
-            bars[sz] = cur;
-         }
-         cur.t = bucket; cur.o = rates[i].open; cur.h = rates[i].high;
-         cur.l = rates[i].low; cur.c = rates[i].close;
-         cur_bucket = bucket; have_cur = true;
-      }
-      else
-      {
-         cur.h = MathMax(cur.h, rates[i].high);
-         cur.l = MathMin(cur.l, rates[i].low);
-         cur.c = rates[i].close;
-      }
-   }
-   // 注意：最後一個 cur（目前正在走的 4H bucket）故意不存入 bars[]，
-   // 因為 Python 回測的指標只用「已收盤」K棒計算，這裡要保持一致。
-   return ArraySize(bars);
-}
-
-//+------------------------------------------------------------------+
-//| 計算 ATR：與 Python 一致，是 TR 的簡單移動平均（不是 Wilder 平滑）|
-//+------------------------------------------------------------------+
-double ComputeAtr(H4Bar &bars[], int period)
-{
-   int n = ArraySize(bars);
-   if(n < period + 1) return -1.0;
-   double sum = 0.0;
-   for(int i = n - period; i < n; i++)
-   {
-      double tr;
-      if(i == 0) tr = bars[i].h - bars[i].l;
-      else tr = MathMax(bars[i].h - bars[i].l,
-                MathMax(MathAbs(bars[i].h - bars[i - 1].c), MathAbs(bars[i].l - bars[i - 1].c)));
-      sum += tr;
-   }
-   return sum / period;
-}
-
-//+------------------------------------------------------------------+
-//| 計算 EMA：與 pandas ewm(span=N, adjust=False) 一致的遞迴公式      |
-//| 只要有足夠的暖機根數（本 EA 抓 60 天≈360 根4H），收斂到的值        |
-//| 跟用「全部歷史」算出來的 EMA 誤差極小（誤差量級 (1-α)^N，N=360 時 |
-//| 對 EMA50 而言完全可忽略）                                         |
-//+------------------------------------------------------------------+
-double ComputeEma(H4Bar &bars[], int period)
-{
-   int n = ArraySize(bars);
-   if(n < period) return -1.0;
-   double alpha = 2.0 / (period + 1.0);
-   double ema = bars[0].c;
-   for(int i = 1; i < n; i++) ema = alpha * bars[i].c + (1.0 - alpha) * ema;
-   return ema;
-}
-
-//+------------------------------------------------------------------+
-//| 取得某標的目前的 EMA/ATR，只有在「進入新的 UTC 4H bucket」時才    |
-//| 重新用 M15 資料組K棒重算，其餘時間直接用快取——避免每個 tick 都   |
-//| CopyRates 造成不必要的負擔                                        |
-//+------------------------------------------------------------------+
-bool GetIndicators(int idx, string sym, double &ema, double &atr)
-{
-   datetime utc_now = ServerToUtc(TimeCurrent());
-   datetime cur_bucket = (datetime)((long)utc_now / (4 * 3600) * (4 * 3600));
-
-   if(g_cached_bucket[idx] == cur_bucket && g_cached_atr[idx] > 0)
-   {
-      ema = g_cached_ema[idx]; atr = g_cached_atr[idx];
-      return true;
-   }
-
-   H4Bar bars[];
-   int n = BuildUtc4hBars(sym, bars);
-   int warmup = MathMax(InpEmaPeriod, InpAtrPeriod) + 5;
-   if(n < warmup)
-   {
-      PrintFormat("⚠️ %s：UTC 4H K棒只有 %d 根，不足以計算 EMA%d/ATR%d（考慮加大 InpHistoryDays）",
-                  sym, n, InpEmaPeriod, InpAtrPeriod);
-      return false;
-   }
-
-   double e = ComputeEma(bars, InpEmaPeriod);
-   double a = ComputeAtr(bars, InpAtrPeriod);
-   if(e <= 0 || a <= 0) return false;
-
-   g_cached_bucket[idx] = cur_bucket;
-   g_cached_ema[idx] = e;
-   g_cached_atr[idx] = a;
-   ema = e; atr = a;
-   return true;
-}
 
 //+------------------------------------------------------------------+
 //| 初始化                                                            |
@@ -208,9 +70,8 @@ int OnInit()
    int m = StringSplit(InpMedianSpreads, ',', sp_parts);
 
    ArrayResize(g_median_spread, n);
-   ArrayResize(g_cached_bucket, n);
-   ArrayResize(g_cached_ema, n);
-   ArrayResize(g_cached_atr, n);
+   ArrayResize(g_ema_handle, n);
+   ArrayResize(g_atr_handle, n);
 
    for(int i = 0; i < n; i++)
    {
@@ -220,9 +81,15 @@ int OnInit()
          PrintFormat("⚠️ 無法訂閱 %s，請確認經紀商代碼（可能需要後綴，如 %s.r）", g_syms[i], g_syms[i]);
 
       g_median_spread[i] = (i < m) ? StringToDouble(sp_parts[i]) : 1.5;
-      g_cached_bucket[i] = 0;
-      g_cached_ema[i] = 0.0;
-      g_cached_atr[i] = 0.0;
+
+      g_ema_handle[i] = iMA(g_syms[i], PERIOD_H4, InpEmaPeriod, 0, MODE_EMA, PRICE_CLOSE);
+      g_atr_handle[i] = iATR(g_syms[i], PERIOD_H4, InpAtrPeriod);
+
+      if(g_ema_handle[i] == INVALID_HANDLE || g_atr_handle[i] == INVALID_HANDLE)
+      {
+         PrintFormat("❌ %s 指標建立失敗", g_syms[i]);
+         return INIT_FAILED;
+      }
    }
    g_count = n;
 
@@ -232,17 +99,20 @@ int OnInit()
       return INIT_PARAMETERS_INCORRECT;
    }
 
-   datetime utc_now = ServerToUtc(TimeCurrent());
-   PrintFormat("✅ EA v2 啟動：%d 檔標的 | 自建UTC對齊4H | broker時差 UTC%+.1f | 伺服器時間 %s → 換算UTC %s",
-               g_count, InpBrokerGmtOffsetHours,
-               TimeToString(TimeCurrent(), TIME_DATE | TIME_SECONDS),
-               TimeToString(utc_now, TIME_DATE | TIME_SECONDS));
-   PrintFormat("   請對照網頁/Python回測同一時刻的 EMA%d/ATR%d，確認數值一致後再考慮實盤", InpEmaPeriod, InpAtrPeriod);
+   PrintFormat("✅ EA v3 啟動：%d 檔標的 | MT5內建H4 (broker伺服器時間) | 伺服器時間 %s",
+               g_count, TimeToString(TimeCurrent(), TIME_DATE | TIME_SECONDS));
+   PrintFormat("   Python回測資料來源已改為 TradingView Pepperstone 報價、換算成同一個 broker 時區，");
+   PrintFormat("   兩邊現在用同一套 4H K棒切法，不需要 EA 自己組K棒。");
    return INIT_SUCCEEDED;
 }
 
 void OnDeinit(const int reason)
 {
+   for(int i = 0; i < g_count; i++)
+   {
+      if(g_ema_handle[i] != INVALID_HANDLE) IndicatorRelease(g_ema_handle[i]);
+      if(g_atr_handle[i] != INVALID_HANDLE) IndicatorRelease(g_atr_handle[i]);
+   }
    Comment("");
 }
 
@@ -404,7 +274,7 @@ void OnTick()
    double dca_notional  = base_notional * InpSizeMultiplier;
    double max_notional  = equity * InpMaxTotalRiskPct / 100.0;   // 上限不隨倍數放大，天然剎車
 
-   string dashboard = StringFormat("通道網格 DCA v2（UTC對齊4H）─ 淨值 %.2f ─ 首單名目 %.0f（下單倍數 x%.2f）\n",
+   string dashboard = StringFormat("通道網格 DCA v3（MT5內建H4，broker時區）─ 淨值 %.2f ─ 首單名目 %.0f（下單倍數 x%.2f）\n",
                                     equity, base_notional, lot_mult);
 
    for(int i = 0; i < g_count; i++)
@@ -412,8 +282,13 @@ void OnTick()
       string sym = g_syms[i];
       if(sym == "") continue;
 
-      double ema, atr;
-      if(!GetIndicators(i, sym, ema, atr)) continue;
+      //--- 指標值（用「已收盤」的 K 棒，不會重繪）
+      double ema_buf[], atr_buf[];
+      if(CopyBuffer(g_ema_handle[i], 0, 1, 1, ema_buf) <= 0) continue;
+      if(CopyBuffer(g_atr_handle[i], 0, 1, 1, atr_buf) <= 0) continue;
+      double ema = ema_buf[0];
+      double atr = atr_buf[0];
+      if(atr <= 0) continue;
 
       double bid = SymbolInfoDouble(sym, SYMBOL_BID);
       double ask = SymbolInfoDouble(sym, SYMBOL_ASK);

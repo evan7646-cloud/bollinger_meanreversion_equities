@@ -51,8 +51,12 @@ CFG = dict(
 
 # ----------------------------------------------------------------- 資料
 def load_4h(pair):
+    """讀取 data_fx_1h/{pair}_1h.csv（來源：TradingView 的 Pepperstone 報價，
+    由 fx_data_pepperstone.py 抓取並已轉換成 MT5 broker 時間）。
+    這裡刻意不加 tz（不是 UTC），因為整條 pipeline 現在統一用「broker 時間」
+    當作唯一時鐘——resample("4h") 切出來的 K棒邊界會跟 MT5 內建 PERIOD_H4 對齊。"""
     df = pd.read_csv(os.path.join(DATA_DIR, f"{pair}_1h.csv"))
-    df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
+    df["datetime"] = pd.to_datetime(df["datetime"])
     df = df.set_index("datetime").sort_index()
     out = (df.resample("4h", label="left", closed="left")
              .agg({"open": "first", "high": "max", "low": "min", "close": "last"})

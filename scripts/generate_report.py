@@ -2,10 +2,16 @@
 產生 GitHub Pages 靜態報告（docs/index.html）
 
 流程：
-  1. 用 yfinance 重新抓取 Top-8 貨幣對的 1H 報價（近 730 天，Yahoo Finance 真實資料）
-  2. 重採樣為 4H，跑 fx_engine_v2 的通道均值回歸 DCA 網格（雙向、較近止盈、4ATR硬停損）
+  1. 用 TradingView 上的 Pepperstone 報價（PEPPERSTONE:xxx）重新抓取 Top-8 貨幣對的
+     1H 報價，並轉換成 MT5 broker 時間（見 fx_data_pepperstone.py 的時區換算說明）
+  2. 重採樣為「跟 MT5 內建 H4 對齊」的 4H K棒，跑 fx_engine_v2 的通道均值回歸 DCA 網格
+     （雙向、較近止盈、4ATR硬停損）
   3. 輸出：逐檔績效、組合績效、完整交易明細（entry/exit）
   4. 把上述資料塞進 docs/report_template.html 產生 docs/index.html
+
+改用 Pepperstone 而非 yfinance 的原因：yfinance 是不綁定特定 broker 的聚合「指示性報價」
+（quoteSourceName 甚至標註為 'Delayed Quote'），Pepperstone 是這個策略實際下單的 broker，
+用它的報價回測才是真正跟實盤同源、時區也才能跟 MT5 對上。
 
 真實點差與隔夜利息（mt5_forex_real_costs.csv）不在這個排程內更新——那份資料只能由使用者
 在自己電腦上的 MT5 終端機執行 ExportForexRealCosts.mq5 才能取得（GitHub Actions 的雲端伺服器
@@ -15,8 +21,6 @@ repo 裡目前的 mt5_forex_real_costs.csv，直到使用者手動重新匯出�
 import os
 import sys
 import json
-import time
-import subprocess
 from datetime import datetime, timezone
 
 import numpy as np
@@ -31,8 +35,8 @@ DOCS_DIR = os.path.join(ROOT, "docs")
 
 
 def refresh_price_data():
-    """用 yfinance 重新抓取 Top-8 及匯率換算所需的所有貨幣對（1H，近 730 天）。"""
-    import yfinance as yf
+    """用 TradingView 的 Pepperstone 報價重新抓取 Top-8 及匯率換算所需的所有貨幣對（1H）。"""
+    from fx_data_pepperstone import fetch_pepperstone_1h, local_utc_offset_hours, BROKER_GMT_OFFSET_HOURS
     from fx_engine_v2 import PAIR_CCY
 
     need_pairs = set(TOP8)
@@ -44,35 +48,22 @@ def refresh_price_data():
             if b == ccy or q == ccy:
                 need_pairs.add(proxy)
 
+    local_off = local_utc_offset_hours()
+    print(f"  本機時區 UTC{local_off:+.1f}，broker時區 UTC{BROKER_GMT_OFFSET_HOURS:+.1f}，"
+          f"換算位移 {BROKER_GMT_OFFSET_HOURS - local_off:+.1f} 小時")
+
     os.makedirs(DATA_DIR, exist_ok=True)
     for pair in sorted(need_pairs):
-        ok = False
-        for period in ["730d", "600d", "500d", "400d"]:
-            for attempt in range(3):
-                try:
-                    df = yf.download(f"{pair}=X", period=period, interval="1h",
-                                     progress=False, auto_adjust=False)
-                    if not df.empty:
-                        df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
-                        df = df.reset_index().rename(columns={
-                            "Datetime": "datetime", "Open": "open", "High": "high",
-                            "Low": "low", "Close": "close"})
-                        df = df[["datetime", "open", "high", "low", "close"]]
-                        df.to_csv(os.path.join(DATA_DIR, f"{pair}_1h.csv"), index=False)
-                        print(f"  {pair}: {len(df)} rows ({period})")
-                        ok = True
-                        break
-                except Exception as e:
-                    print(f"  {pair}: attempt {attempt+1}/{period} failed ({e})")
-                    time.sleep(3)
-            if ok:
-                break
-        if not ok:
+        try:
+            df = fetch_pepperstone_1h(pair)
+            df.to_csv(os.path.join(DATA_DIR, f"{pair}_1h.csv"), index=False)
+            print(f"  {pair}: {len(df)} rows, {df['datetime'].min()} -> {df['datetime'].max()} (MT5 broker 時間)")
+        except Exception as e:
             existing = os.path.join(DATA_DIR, f"{pair}_1h.csv")
             if os.path.exists(existing):
-                print(f"  {pair}: 抓取失敗，沿用舊資料")
+                print(f"  {pair}: 抓取失敗（{e}），沿用舊資料")
             else:
-                print(f"  ⚠️ {pair}: 抓取失敗且無舊資料，可能影響回測")
+                print(f"  ⚠️ {pair}: 抓取失敗（{e}）且無舊資料，可能影響回測")
 
 
 def run_backtest():

@@ -305,6 +305,18 @@
       年化由 5.18% 微調為 4.98%——差額來自更精確的成本計算。真正的差別是：
       下表的手數欄位現在是<strong>可以直接下單的真實手數</strong>。
     </div>
+    <div class="callout">
+      <strong>v3 修正：資料來源改為 TradingView 的 Pepperstone 報價，時間對齊 MT5 broker 時區</strong>
+      舊版用 yfinance——那是不綁定特定 broker 的聚合「指示性報價」（Yahoo 自己標註
+      <code>quoteSourceName: 'Delayed Quote'</code>，且即時 bid/ask 方向還會顛倒，資料品質不明）。
+      現在改抓 TradingView 上 <code>PEPPERSTONE:</code> 開頭的報價——這才是這個策略實際下單的
+      broker，回測才真正跟實盤同源。另外處理了一個容易忽略的時區陷阱：抓資料用的
+      <code>tvDatafeed</code>套件會用「執行當下這台機器的本地時區」去解讀時間戳，這個程式
+      在部署到不同機器（例如 GitHub Actions 的 UTC 伺服器）時會拿到不同的數字，所以改成
+      每次執行都<strong>動態量測本機時區</strong>再換算，不是寫死的常數。換算後的資料統一對齊
+      <strong>MT5 broker 伺服器時間</strong>，4H K棒切法直接對上你 MT5 終端機看到的 <code>PERIOD_H4</code>
+      ——EA 也因此改回用 MT5 內建 H4 指標（v3），不用再自己組K棒。
+    </div>
     <dl class="runspec">
       <div><dt>週期</dt><dd>4H</dd></div>
       <div><dt>樣本</dt><dd id="rs-range">—</dd></div>
