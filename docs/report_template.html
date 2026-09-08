@@ -119,6 +119,25 @@
              font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
   .support b { color: var(--ink); font-weight: 500; }
 
+  /* ---------- capital input ---------- */
+  .cap-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px;
+             margin: 4px 0 18px; font-size: 13px; color: var(--ink-2); }
+  .cap-row label { white-space: nowrap; }
+  .cap-field { display: flex; align-items: center; background: var(--surface);
+               border: 1px solid var(--rule); border-radius: 3px; padding: 0 10px;
+               font-family: var(--mono); }
+  .cap-field span { color: var(--ink-3); font-size: 13px; }
+  .cap-field input { border: none; background: transparent; color: var(--ink);
+                      font-family: var(--mono); font-size: 13.5px; font-weight: 500;
+                      width: 110px; padding: 7px 4px; font-variant-numeric: tabular-nums; }
+  .cap-field input:focus { outline: none; }
+  .cap-field input::-webkit-outer-spin-button,
+  .cap-field input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .cap-hint { color: var(--ink-3); font-size: 11.5px; }
+  .tile .usd { font-family: var(--mono); font-size: 12px; color: var(--accent);
+               margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .tile.is-loss .usd { color: var(--loss); }
+
   /* ---------- charts ---------- */
   .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 3px;
            padding: 18px 18px 10px; margin-top: 18px; box-shadow: var(--shadow); }
@@ -354,6 +373,14 @@
       標的從 8 檔擴到 10 檔後，同時在場的部位變多，資金利用率跟著上升（平均動用資金
       41% → 47%，峰值 128% → 133%），年化報酬與風險調整後指標都同步改善。
     </p>
+    <div class="cap-row">
+      <label for="cap-input">依你的實際本金換算：</label>
+      <div class="cap-field">
+        <span>$</span>
+        <input type="number" id="cap-input" step="1000" min="0" inputmode="decimal">
+      </div>
+      <span class="cap-hint">輸入你帳戶的實際淨值（不是手數本身），下面美金數字會自動按比例換算；瀏覽器會記住這個數字</span>
+    </div>
     <div class="tiles" id="tiles"></div>
     <div class="support" id="support"></div>
 
@@ -439,15 +466,15 @@
 
   <section>
     <p class="eyebrow">資金規模推算</p>
-    <h2>$100,000 帳戶一年可以賺多少</h2>
+    <h2 id="money-title">$100,000 帳戶一年可以賺多少</h2>
     <p class="note">
-      部位等比放大（首單名目由 $1,500 提高到 $6,000，即淨值的 6%），報酬率不變。
-      外匯市場流動性極高，這個量級不會改變真實點差成本，線性外推是合理假設。
-      放大後手數也更適合實盤——中位數從 0.022 手變成 0.086 手，四捨五入到 0.01 的誤差從 7% 降到 5%。
+      跟上面「即時狀態」用同一個本金輸入框——部位等比放大，報酬率不變（外匯市場流動性極高，
+      這個量級不會改變真實點差成本，線性外推是合理假設）。手數也一併換算，
+      方便直接對照你在 MT5 該用多大部位。
     </p>
     <div class="money" id="money"></div>
     <p class="note" style="margin-top:16px;">
-      信心區間由 Sharpe 反推年化波動度得出（4.98% ÷ 1.99 ≈ 2.50%）。這只反映 2.78 年觀測樣本內的波動，
+      信心區間由 Sharpe 反推年化波動度得出。這只反映 <span id="money-years">—</span> 年觀測樣本內的波動，
       <strong>不包含樣本期間沒發生的外匯危機</strong>（2015 瑞郎脫鉤單日 30%、2022 英鎊迷你預算崩盤）。
       跳空行情下 4 ATR 停損無法保證在停損價成交，實際虧損可能遠超過歷史 MDD。
     </p>
@@ -561,26 +588,61 @@ const svgEl = (tag, attrs) => { const n = document.createElementNS("http://www.w
 document.getElementById("rs-range").textContent = DATA.meta.start + " → " + DATA.meta.end;
 document.getElementById("gen-at").textContent = DATA.meta.generated_at || "—";
 
-/* ---------------- hero tiles ---------------- */
+/* ---------------- hero tiles（依使用者輸入本金換算美金） ---------------- */
 const P = DATA.portfolio;
-const tileDefs = [
-  { lab: "年化報酬", val: pct(P.ann), sub: "總報酬 " + pct(P.total) + " ／ " + P.years + " 年" },
-  { lab: "最大回撤", val: pct(P.mdd), sub: "歷史最深回撤（樣本內）", loss: true },
-  {
-    lab: "目前回撤", val: pct(P.currentDd), sub: "截至 " + (DATA.meta.generated_at || "—"),
-    loss: P.currentDd > 0.05, live: true,
-  },
-  { lab: "Sharpe", val: fmt(P.sharpe), sub: "以 4H 報酬年化" },
-  { lab: "Calmar", val: fmt(P.calmar), sub: "年化報酬 ÷ 最大回撤" },
-];
+const CAP_KEY = "fx_report_capital_usd";
+const capInput = document.getElementById("cap-input");
+const usd = v => "$" + Math.round(v).toLocaleString();
+
+function loadCapital() {
+  let v = 25000;
+  try {
+    const saved = localStorage.getItem(CAP_KEY);
+    if (saved && !isNaN(parseFloat(saved))) v = parseFloat(saved);
+  } catch (e) {}
+  return v;
+}
+function saveCapital(v) {
+  try { localStorage.setItem(CAP_KEY, String(v)); } catch (e) {}
+}
+
 const tiles = document.getElementById("tiles");
-tileDefs.forEach(t => {
-  const d = el("div", "tile" + (t.loss ? " is-loss" : ""));
-  const lab = t.live
-    ? (() => { const r = el("div", "lab-row"); r.append(el("span", "live-dot"), el("span", "", t.lab)); return r; })()
-    : el("div", "lab", t.lab);
-  d.append(lab, el("div", "val", t.val), el("div", "sub", t.sub));
-  tiles.append(d);
+function renderTiles(capital) {
+  const tileDefs = [
+    { lab: "年化報酬", val: pct(P.ann), sub: "總報酬 " + pct(P.total) + " ／ " + P.years + " 年",
+      usdVal: usd(capital * P.ann / 100) + " ／年" },
+    { lab: "最大回撤", val: pct(P.mdd), sub: "歷史最深回撤（樣本內）", loss: true,
+      usdVal: "−" + usd(capital * P.mdd / 100) },
+    {
+      lab: "目前回撤", val: pct(P.currentDd), sub: "截至 " + (DATA.meta.generated_at || "—"),
+      loss: P.currentDd > 0.05, live: true,
+      usdVal: P.currentDd > 0.001 ? "−" + usd(capital * P.currentDd / 100) : usd(0),
+    },
+    { lab: "Sharpe", val: fmt(P.sharpe), sub: "以 4H 報酬年化" },
+    { lab: "Calmar", val: fmt(P.calmar), sub: "年化報酬 ÷ 最大回撤" },
+  ];
+  tiles.innerHTML = "";
+  tileDefs.forEach(t => {
+    const d = el("div", "tile" + (t.loss ? " is-loss" : ""));
+    const lab = t.live
+      ? (() => { const r = el("div", "lab-row"); r.append(el("span", "live-dot"), el("span", "", t.lab)); return r; })()
+      : el("div", "lab", t.lab);
+    d.append(lab, el("div", "val", t.val), el("div", "sub", t.sub));
+    if (t.usdVal) d.append(el("div", "usd", "≈ " + t.usdVal + "（依你輸入的本金）"));
+    tiles.append(d);
+  });
+}
+
+let currentCapital = loadCapital();
+capInput.value = currentCapital;
+renderTiles(currentCapital);
+capInput.addEventListener("input", () => {
+  const v = parseFloat(capInput.value);
+  if (isNaN(v) || v < 0) return;
+  currentCapital = v;
+  saveCapital(v);
+  renderTiles(v);
+  renderMoney(v);
 });
 
 /* ---------------- 目前持倉部位 ---------------- */
@@ -617,28 +679,35 @@ tileDefs.forEach(t => {
     grid.append(card);
   });
 })();
-/* ---------------- $100K 推算 ---------------- */
-(function () {
-  const CAP = 100000;
+/* ---------------- 資金規模推算（跟上面同一個本金輸入框） ---------------- */
+const BACKTEST_BASE_CAPITAL = 25000;   // 回測用的基準本金，換算手數時的比例基準
+const moneyEl = document.getElementById("money");
+const moneyTitle = document.getElementById("money-title");
+const moneyYears = document.getElementById("money-years");
+if (moneyYears) moneyYears.textContent = P.years;
+
+function renderMoney(capital) {
   const vol = P.ann / P.sharpe;                 // Sharpe 反推年化波動度
-  const money = document.getElementById("money");
-  const usd = v => "$" + Math.round(v).toLocaleString();
+  const scale = capital / BACKTEST_BASE_CAPITAL;
+  if (moneyTitle) moneyTitle.textContent = usd(capital) + " 帳戶一年可以賺多少";
   const rows = [
-    ["預期年化獲利", usd(CAP * P.ann / 100), "big"],
-    ["年化波動度（Sharpe 反推）", pct(vol) + " ≈ " + usd(CAP * vol / 100), ""],
-    ["68% 信心區間（±1σ）", usd(CAP * (P.ann - vol) / 100) + " ~ " + usd(CAP * (P.ann + vol) / 100), ""],
-    ["95% 信心區間（±2σ）", usd(CAP * (P.ann - 2 * vol) / 100) + " ~ " + usd(CAP * (P.ann + 2 * vol) / 100), ""],
-    ["歷史最深回撤（帳面浮虧）", "−" + usd(CAP * P.mdd / 100), "warn"],
-    ["峰值需要的保證金曝險", usd(CAP * P.peakDep / 100), ""],
-    ["首單名目金額（淨值 6%）", usd(CAP * 0.06), ""],
-    ["首單手數（中位／滿倉）", (P.lots * 4).toFixed(3) + " ／ " + (P.maxlots * 4).toFixed(3) + " 手", ""],
+    ["預期年化獲利", usd(capital * P.ann / 100), "big"],
+    ["年化波動度（Sharpe 反推）", pct(vol) + " ≈ " + usd(capital * vol / 100), ""],
+    ["68% 信心區間（±1σ）", usd(capital * (P.ann - vol) / 100) + " ~ " + usd(capital * (P.ann + vol) / 100), ""],
+    ["95% 信心區間（±2σ）", usd(capital * (P.ann - 2 * vol) / 100) + " ~ " + usd(capital * (P.ann + 2 * vol) / 100), ""],
+    ["歷史最深回撤（帳面浮虧）", "−" + usd(capital * P.mdd / 100), "warn"],
+    ["峰值需要的保證金曝險", usd(capital * P.peakDep / 100), ""],
+    ["首單名目金額（淨值 6%）", usd(capital * 0.06), ""],
+    ["首單手數（中位／滿倉）", (P.lots * scale).toFixed(3) + " ／ " + (P.maxlots * scale).toFixed(3) + " 手", ""],
   ];
+  moneyEl.innerHTML = "";
   rows.forEach(([k, v, cls]) => {
     const d = el("div");
     d.append(el("span", "k", k), el("span", "v" + (cls ? " " + cls : ""), v));
-    money.append(d);
+    moneyEl.append(d);
   });
-})();
+}
+renderMoney(currentCapital);
 
 document.getElementById("support").innerHTML =
   `<span>勝率 <b>${P.win}%</b></span><span>交易數 <b>${P.trades.toLocaleString()}</b></span>` +
