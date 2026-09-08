@@ -42,7 +42,7 @@ input bool   InpAllowShort     = true;      // 允許做空
 input group "═══ 風控與執行 ═══"
 input double InpMaxSpreadMult  = 3.0;       // 點差超過長期中位數的幾倍時禁止新開倉
 input string InpMedianSpreads  = "1.2,0.8,2.5,1.0,2.5,0.9,0.5,1.1,0.4,2.5"; // 各對點差中位數(pips)，順序須對應 InpSymbols（GBPNZD/GBPCHF/NZDCHF 為估計值）
-input double InpMaxTotalRiskPct= 60.0;      // 所有部位名目總和上限（占淨值百分比）
+input double InpMaxTotalRiskPct= 60.0;      // 所有部位名目總和上限（占淨值百分比）；填 0 = 不設限，只靠 InpMaxLayers 限制單一商品
 input long   InpMagic          = 20260904;  // magic number
 input int    InpSlippagePoints = 20;        // 允許滑價（points）
 input bool   InpVerboseLog     = true;      // 詳細日誌
@@ -273,7 +273,8 @@ void OnTick()
    double lot_mult = (InpLotMultiplier > 0.0) ? InpLotMultiplier : 1.0;   // 防呆：0 或負值視為 1 倍
    double base_notional = (InpSizeByEquity ? equity * InpBaseOrderPct / 100.0 : InpBaseOrderUSD) * lot_mult;
    double dca_notional  = base_notional * InpSizeMultiplier;
-   double max_notional  = equity * InpMaxTotalRiskPct / 100.0;   // 上限不隨倍數放大，天然剎車
+   double max_notional  = (InpMaxTotalRiskPct > 0.0) ? equity * InpMaxTotalRiskPct / 100.0 : DBL_MAX;
+   // InpMaxTotalRiskPct=0 時視為不設限；單一商品的加碼上限仍由 InpMaxLayers 獨立控制，不受此影響
 
    string dashboard = StringFormat("通道網格 DCA v3（MT5內建H4，broker時區）─ 淨值 %.2f ─ 首單名目 %.0f（下單倍數 x%.2f）\n",
                                     equity, base_notional, lot_mult);
