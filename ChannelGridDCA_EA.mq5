@@ -13,12 +13,13 @@
 #property description "v3：改回用 MT5 內建 PERIOD_H4 算 EMA/ATR（v2 曾經自建 UTC 對齊4H，"
 #property description "現在 Python 回測改成直接對齊 MT5 broker 時間，兩邊統一用 broker 時區，"
 #property description "MT5 原生 H4 本來就是照 broker 伺服器時間切的，不需要再自己組K棒）。"
+#property description "v3.1：標的改為 G8 全28檔掃描後 Sharpe 前10（GBPNZD/GBPCHF/NZDCHF 點差為估計值）。"
 
 #include <Trade/Trade.mqh>
 
 //--- 交易標的與資金
 input group "═══ 標的與資金 ═══"
-input string InpSymbols        = "AUDCAD,AUDNZD,NZDCAD,CADJPY,AUDUSD,GBPAUD,USDCHF,EURAUD"; // 交易貨幣對（逗號分隔）
+input string InpSymbols        = "AUDCAD,AUDCHF,GBPNZD,CADJPY,GBPCHF,EURCHF,NZDUSD,EURAUD,AUDUSD,NZDCHF"; // 交易貨幣對（G8全28檔掃描後Sharpe前10）
 input bool   InpSizeByEquity   = true;      // 部位大小依帳戶淨值百分比（false = 用固定美元金額）
 input double InpBaseOrderPct   = 6.0;       // 首單名目金額 = 淨值的百分之幾（6% ≈ $25,000 帳戶的 $1,500）
 input double InpBaseOrderUSD   = 1500.0;    // 首單名目金額（InpSizeByEquity=false 時使用）
@@ -40,7 +41,7 @@ input bool   InpAllowShort     = true;      // 允許做空
 //--- 風控與執行
 input group "═══ 風控與執行 ═══"
 input double InpMaxSpreadMult  = 3.0;       // 點差超過長期中位數的幾倍時禁止新開倉
-input string InpMedianSpreads  = "1.2,1.3,1.3,1.0,0.4,1.8,0.6,1.1"; // 各對點差中位數(pips)，順序須對應 InpSymbols
+input string InpMedianSpreads  = "1.2,0.8,2.5,1.0,2.5,0.9,0.5,1.1,0.4,2.5"; // 各對點差中位數(pips)，順序須對應 InpSymbols（GBPNZD/GBPCHF/NZDCHF 為估計值）
 input double InpMaxTotalRiskPct= 60.0;      // 所有部位名目總和上限（占淨值百分比）
 input long   InpMagic          = 20260904;  // magic number
 input int    InpSlippagePoints = 20;        // 允許滑價（points）

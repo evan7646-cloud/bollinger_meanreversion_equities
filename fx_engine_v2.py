@@ -27,16 +27,27 @@ INITIAL_CAPITAL = 25000.0
 CONTRACT_SIZE = 100000.0          # 外匯標準手 = 100,000 基礎貨幣單位
 COMMISSION_PER_LOT_SIDE = 3.0     # 單邊佣金 $3/手（來回 $6）
 
-# 各貨幣對的 (基礎貨幣, 計價貨幣)
+# 各貨幣對的 (基礎貨幣, 計價貨幣) —— G8 貨幣兩兩組合，共 28 檔 (major+minor+cross全覆蓋)
 PAIR_CCY = {
-    "EURUSD": ("EUR", "USD"), "USDJPY": ("USD", "JPY"), "GBPUSD": ("GBP", "USD"),
-    "AUDUSD": ("AUD", "USD"), "USDCAD": ("USD", "CAD"), "USDCHF": ("USD", "CHF"),
-    "NZDUSD": ("NZD", "USD"), "EURGBP": ("EUR", "GBP"), "EURJPY": ("EUR", "JPY"),
-    "GBPJPY": ("GBP", "JPY"), "AUDNZD": ("AUD", "NZD"), "EURCHF": ("EUR", "CHF"),
-    "CADJPY": ("CAD", "JPY"), "EURAUD": ("EUR", "AUD"), "GBPAUD": ("GBP", "AUD"),
-    "AUDCAD": ("AUD", "CAD"), "NZDCAD": ("NZD", "CAD"), "CHFJPY": ("CHF", "JPY"),
+    # 7 檔 major
+    "EURUSD": ("EUR", "USD"), "GBPUSD": ("GBP", "USD"), "USDJPY": ("USD", "JPY"),
+    "USDCHF": ("USD", "CHF"), "USDCAD": ("USD", "CAD"), "AUDUSD": ("AUD", "USD"),
+    "NZDUSD": ("NZD", "USD"),
+    # EUR 交叉盤
+    "EURGBP": ("EUR", "GBP"), "EURJPY": ("EUR", "JPY"), "EURCHF": ("EUR", "CHF"),
+    "EURCAD": ("EUR", "CAD"), "EURAUD": ("EUR", "AUD"), "EURNZD": ("EUR", "NZD"),
+    # GBP 交叉盤
+    "GBPJPY": ("GBP", "JPY"), "GBPCHF": ("GBP", "CHF"), "GBPCAD": ("GBP", "CAD"),
+    "GBPAUD": ("GBP", "AUD"), "GBPNZD": ("GBP", "NZD"),
+    # JPY 交叉盤 (JPY當計價)
+    "CHFJPY": ("CHF", "JPY"), "CADJPY": ("CAD", "JPY"), "AUDJPY": ("AUD", "JPY"),
+    "NZDJPY": ("NZD", "JPY"),
+    # 其餘商品貨幣交叉盤
+    "CADCHF": ("CAD", "CHF"), "AUDCHF": ("AUD", "CHF"), "NZDCHF": ("NZD", "CHF"),
+    "AUDCAD": ("AUD", "CAD"), "NZDCAD": ("NZD", "CAD"), "AUDNZD": ("AUD", "NZD"),
 }
 JPY_QUOTED = {p for p, (b, q) in PAIR_CCY.items() if q == "JPY"}
+ALL_28_PAIRS = list(PAIR_CCY.keys())
 
 CFG = dict(
     base_order=1500.0,     # 首單目標名目金額 (USD)
@@ -304,5 +315,25 @@ def load_real_costs():
             spread_pips=float(row["點差中位數(Pips)"]),
             swap_long=float(row["做多Swap($/手/日)"]),
             swap_short=float(row["做空Swap($/手/日)"]),
+            cost_is_estimated=False,
+        )
+    return out
+
+
+def load_costs_all_pairs(default_spread_pips: float = 2.5):
+    """跟 load_real_costs() 一樣，但對『沒被 ExportForexRealCosts.mq5 調查過』的貨幣對，
+    補一個保守估計值（標明 cost_is_estimated=True），讓大規模掃描不會漏掉沒調查過的貨幣對。
+    這些估計值只是佔位，用來先做初步篩選；真的要交易之前應該重新用 MQL5 腳本把
+    InpSymbols 補上這些貨幣對，取得真實點差。"""
+    real = load_real_costs()
+    out = dict(real)
+    for pair in PAIR_CCY:
+        if pair in out:
+            continue
+        out[pair] = dict(
+            pip_size=0.01 if pair in JPY_QUOTED else 0.0001,
+            spread_pips=default_spread_pips,
+            swap_long=-3.0, swap_short=-3.0,
+            cost_is_estimated=True,
         )
     return out

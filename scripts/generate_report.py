@@ -2,7 +2,7 @@
 產生 GitHub Pages 靜態報告（docs/index.html）
 
 流程：
-  1. 用 TradingView 上的 Pepperstone 報價（PEPPERSTONE:xxx）重新抓取 Top-8 貨幣對的
+  1. 用 TradingView 上的 Pepperstone 報價（PEPPERSTONE:xxx）重新抓取 Top-10 貨幣對的
      1H 報價，並轉換成 MT5 broker 時間（見 fx_data_pepperstone.py 的時區換算說明）
   2. 重採樣為「跟 MT5 內建 H4 對齊」的 4H K棒，跑 fx_engine_v2 的通道均值回歸 DCA 網格
      （雙向、較近止盈、4ATR硬停損）
@@ -29,13 +29,17 @@ import pandas as pd
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-TOP8 = ["AUDCAD", "AUDNZD", "NZDCAD", "CADJPY", "AUDUSD", "GBPAUD", "USDCHF", "EURAUD"]
+# G8 全 28 檔掃描後、依 Sharpe 取前 10 檔（fx_28pairs_scan_results.csv）
+# ⚠️ GBPNZD / GBPCHF / NZDCHF 的點差與隔夜利息目前是保守估計值，尚未用
+#    ExportForexRealCosts.mq5 實測過，網頁上會標示出來
+TOP8 = ["AUDCAD", "AUDCHF", "GBPNZD", "CADJPY", "GBPCHF",
+        "EURCHF", "NZDUSD", "EURAUD", "AUDUSD", "NZDCHF"]
 DATA_DIR = os.path.join(ROOT, "data_fx_1h")
 DOCS_DIR = os.path.join(ROOT, "docs")
 
 
 def refresh_price_data():
-    """用 TradingView 的 Pepperstone 報價重新抓取 Top-8 及匯率換算所需的所有貨幣對（1H）。"""
+    """用 TradingView 的 Pepperstone 報價重新抓取 Top-10 及匯率換算所需的所有貨幣對（1H）。"""
     from fx_data_pepperstone import fetch_pepperstone_1h, local_utc_offset_hours, BROKER_GMT_OFFSET_HOURS
     from fx_engine_v2 import PAIR_CCY
 
@@ -68,7 +72,7 @@ def refresh_price_data():
 
 def run_backtest():
     from fx_engine_v2 import (load_4h, add_indicators, build_usd_rates, run_engine_v2,
-                              load_real_costs, PAIR_CCY, CFG, INITIAL_CAPITAL)
+                              load_costs_all_pairs, PAIR_CCY, CFG, INITIAL_CAPITAL)
     from fx_portfolio_v2 import run_portfolio_v2
 
     need = set()
@@ -76,7 +80,7 @@ def run_backtest():
         b, q = PAIR_CCY[p]
         need.add(b); need.add(q)
     rates = build_usd_rates(need)
-    costs_all = load_real_costs()
+    costs_all = load_costs_all_pairs()
 
     perf_rows, curves, all_trades, open_positions = [], {}, [], []
     for p in TOP8:
@@ -87,7 +91,9 @@ def run_backtest():
             貨幣對=p, 年化報酬=r["ann_return_pct"], MDD=r["max_dd_pct"], Sharpe=r["sharpe"],
             Calmar=r["calmar"], 總報酬=r["total_return_pct"], 勝率=r["win_rate"],
             獲利因子=r["profit_factor"], 交易數=r["n_trades"], 止盈=r["n_tp"], 停損=r["n_sl"],
-            中位手數=r["median_lots"], 最大手數=r["max_lots"], 回測年數=r["years"]))
+            中位手數=r["median_lots"], 最大手數=r["max_lots"], 回測年數=r["years"],
+            成本估計=costs_all[p].get("cost_is_estimated", False),
+            點差=costs_all[p]["spread_pips"]))
         all_trades.extend(r["trade_log"])
         if r["open_position"] is not None:
             open_positions.append(r["open_position"])
@@ -117,7 +123,8 @@ def build_payload(perf, curves, port, port_curve, trades_df, open_positions):
             total=round(row["總報酬"], 3), win=round(row["勝率"], 2), pf=round(row["獲利因子"], 3),
             trades=int(row["交易數"]), tp=int(row["止盈"]), sl=int(row["停損"]),
             lots=round(row["中位手數"], 4), maxlots=round(row["最大手數"], 4),
-            years=round(row["回測年數"], 2), curve=series))
+            years=round(row["回測年數"], 2), spread=round(float(row["點差"]), 2),
+            est=bool(row["成本估計"]), curve=series))
 
     pc = port_curve.iloc[::2].tolist()
 
@@ -169,10 +176,10 @@ def build_payload(perf, curves, port, port_curve, trades_df, open_positions):
 
 
 def main():
-    print("=== 1. 重新抓取真實外匯報價 (Yahoo Finance, 1H) ===")
+    print("=== 1. 重新抓取真實外匯報價 (TradingView Pepperstone, 1H) ===")
     refresh_price_data()
 
-    print("\n=== 2. 執行回測 (fx_engine_v2, Top-8, 4H) ===")
+    print("\n=== 2. 執行回測 (fx_engine_v2, Top-10, 4H) ===")
     perf, curves, port, port_curve, trades_df, open_positions = run_backtest()
     print(perf.round(3).to_string(index=False))
     print(f"\n組合: 年化 {port['ann_return_pct']:.2f}% MDD {port['max_dd_pct']:.2f}% "

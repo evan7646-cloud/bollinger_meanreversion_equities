@@ -1,6 +1,6 @@
 """單一帳戶多貨幣對組合模擬 (v2 引擎：正確跨幣別部位與手數)"""
 import numpy as np, pandas as pd
-from fx_engine_v2 import (load_4h, add_indicators, build_usd_rates, load_real_costs,
+from fx_engine_v2 import (load_4h, add_indicators, build_usd_rates, load_costs_all_pairs,
                           PAIR_CCY, CFG, INITIAL_CAPITAL, CONTRACT_SIZE,
                           COMMISSION_PER_LOT_SIDE)
 
@@ -10,7 +10,8 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None):
     for p in pairs:
         b, q = PAIR_CCY[p]; need.add(b); need.add(q)
     rates = build_usd_rates(need)
-    costs_all = load_real_costs()
+    # 用 load_costs_all_pairs()：已調查過的用真實點差，沒調查過的補保守估計值
+    costs_all = load_costs_all_pairs()
 
     data = {p: add_indicators(load_4h(p)) for p in pairs}
     idx = sorted(set().union(*[set(d.index) for d in data.values()]))

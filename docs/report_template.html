@@ -1,4 +1,4 @@
-<title>網格策略 Top-8 貨幣對</title>
+<title>網格策略 Top-10 貨幣對</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@600&display=swap">
@@ -135,7 +135,7 @@
   .zeroline { stroke: var(--ink-3); stroke-width: 1; opacity: .55; }
 
   /* ---------- small multiples ---------- */
-  .sm-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+  .sm-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px;
              background: var(--rule); border: 1px solid var(--rule); border-radius: 3px;
              overflow: hidden; margin-top: 18px; }
   .sm { background: var(--surface); padding: 12px 12px 6px; }
@@ -283,16 +283,16 @@
 <div class="wrap">
   <header>
     <p class="kicker">4H 自適應通道網格 · 外匯回測</p>
-    <h1>Sharpe 前 8 檔貨幣對績效</h1>
+    <h1>Sharpe 前 10 檔貨幣對績效</h1>
     <p class="lede">
-      從 15 檔通過結構性篩選的貨幣對中，取 Sharpe 值最高的 8 檔，各自以 $25,000 獨立本金回測，
-      並模擬「單一帳戶同時交易這 8 檔」的共用資金池組合。成本含真實點差、佣金與隔夜利息，
+      從 G8 貨幣兩兩組合的<strong>全部 28 檔</strong>（major + minor + cross）中，取 Sharpe 值最高的 10 檔，
+      各自以 $25,000 獨立本金回測，並模擬「單一帳戶同時交易這 10 檔」的共用資金池組合。成本含真實點差、佣金與隔夜利息，
       止盈與 4 ATR 硬停損均按原始策略邏輯保留。
     </p>
     <p class="lede" style="margin-top:10px;">
       <strong>先說一個必須看到的反面證據</strong>：同一份資料切成前 60%／後 40% 檢驗過，
       用前段歷史排名挑出的最佳 6 檔，在後段樣本外的表現反而<strong>不如</strong>當初排名最差的 6 檔
-      （樣本內外 Sharpe 相關性 −0.03，等於零）。這 8 檔是用<strong>全樣本</strong>排出來的最佳結果，
+      （樣本內外 Sharpe 相關性 −0.03，等於零）。這 10 檔是用<strong>全樣本</strong>排出來的最佳結果，
       本質上仍是「事後挑選」——請把下面的數字當成這批貨幣對的歷史特徵參考，而非對未來排名的保證。
     </p>
     <div class="callout">
@@ -317,6 +317,18 @@
       <strong>MT5 broker 伺服器時間</strong>，4H K棒切法直接對上你 MT5 終端機看到的 <code>PERIOD_H4</code>
       ——EA 也因此改回用 MT5 內建 H4 指標（v3），不用再自己組K棒。
     </div>
+    <div class="callout">
+      <strong>v3.1 換標的：G8 全 28 檔重新掃描，Top-8 換成 Top-10</strong>
+      把 USD/EUR/GBP/JPY/CHF/CAD/AUD/NZD 兩兩組合的全部 28 檔都跑過一遍後重新排名。
+      <strong>新進榜</strong>：AUDCHF（Sharpe 2.29、權益曲線與時間的相關係數 0.99，全場最平滑）、
+      GBPNZD、GBPCHF、EURCHF、NZDUSD、NZDCHF。
+      <strong>淘汰</strong>：AUDNZD（Sharpe −0.10，唯一負報酬且曲線是純雜訊）、
+      USDCHF（平滑度僅 0.37）、GBPAUD（Sharpe 0.67 偏弱）、NZDCAD（掉出前 10）。
+      表格與圖上帶 <strong>*</strong> 的三檔（GBPNZD、GBPCHF、NZDCHF）目前<strong>還沒有實測點差</strong>，
+      成本是用 2.5 pips 的保守估計值代入，真實數字要等在 MT5 執行
+      <code>ExportForexRealCosts.mq5</code> 把這幾檔補進調查清單後才有——在那之前，
+      這三檔的績效數字請保留懷疑。
+    </div>
     <dl class="runspec">
       <div><dt>週期</dt><dd>4H</dd></div>
       <div><dt>樣本</dt><dd id="rs-range">—</dd></div>
@@ -335,12 +347,12 @@
 
   <section>
     <p class="eyebrow">組合結果</p>
-    <h2>單一 $25,000 帳戶同時交易 Top-8</h2>
+    <h2>單一 $25,000 帳戶同時交易 Top-10</h2>
     <p class="note">
-      成本已改用 MT5 broker 過去 7 天、每天 48 個時段的真實歷史點差取樣（中位數）+ 真實隔夜利息，
-      不再是估計值。比全部 15 檔的組合更集中：年化報酬較低（4.98% vs 6.00%），但 MDD 更小
-      （3.31% vs 6.01%）、Sharpe 更高（1.99 vs 1.36）、Calmar 更高（1.50 vs 1.00），
-      且峰值動用資金從 221% 降到 121%——少槓桿換來更好的風險調整後報酬。
+      10 檔之中有 7 檔的成本用的是 MT5 broker 過去 7 天、每天 48 個時段的真實歷史點差取樣（中位數）
+      + 真實隔夜利息；帶 * 的 3 檔（GBPNZD、GBPCHF、NZDCHF）尚未實測，用 2.5 pips 保守估計值代入。
+      標的從 8 檔擴到 10 檔後，同時在場的部位變多，資金利用率跟著上升（平均動用資金
+      41% → 47%，峰值 128% → 133%），年化報酬與風險調整後指標都同步改善。
     </p>
     <div class="tiles" id="tiles"></div>
     <div class="support" id="support"></div>
@@ -362,16 +374,16 @@
     <p class="eyebrow">即時狀態</p>
     <h2>目前持倉部位</h2>
     <p class="note">
-      截至最後一次資料更新（每小時刷新）時，8 檔中尚未觸發止盈或停損、仍持有中的部位。
+      截至最後一次資料更新（每小時刷新）時，10 檔中尚未觸發止盈或停損、仍持有中的部位。
       均價含 DCA 加碼後的最終持倉均價，未實現損益以最新收盤價估算，尚未真正入袋，會隨行情波動。
     </p>
-    <div id="pos-empty" class="pos-empty" hidden>目前 8 檔全部空手，沒有任何持倉中的部位。</div>
+    <div id="pos-empty" class="pos-empty" hidden>目前 10 檔全部空手，沒有任何持倉中的部位。</div>
     <div class="pos-grid" id="pos-grid"></div>
   </section>
 
   <section>
     <p class="eyebrow">逐檔績效</p>
-    <h2>Top-8 貨幣對完整指標</h2>
+    <h2>Top-10 貨幣對完整指標</h2>
     <p class="note">
       預設依 Sharpe 由高至低排列（本次篩選依據）。點選欄位標題可改變排序，例如切到 Calmar 檢查另一種風險調整角度。
     </p>
@@ -418,8 +430,9 @@
     <p class="eyebrow">權益曲線</p>
     <h2>逐檔小倍數圖 · 共用縱軸刻度</h2>
     <p class="note">
-      8 個面板共用同一縱軸範圍，因此高度可直接互相比較。USDCHF、EURAUD、GBPAUD 三檔的可取得資料較短，
-      曲線起點因此較晚，屬實際資料限制而非策略空手。滑過任一面板可讀取該時點數值。
+      10 個面板共用同一縱軸範圍，因此高度可直接互相比較——這正是挑選這批標的的主要依據：
+      要的是像 AUDCAD、AUDCHF 那樣「接近單調斜線上升」的曲線，而不是上下震盪、靠尾段拉回來的。
+      滑過任一面板可讀取該時點數值。
     </p>
     <div class="sm-grid" id="sm-grid"></div>
   </section>
@@ -444,7 +457,7 @@
     <p class="eyebrow">實盤部署</p>
     <h2>MT5 EA：ChannelGridDCA_EA.mq5</h2>
     <p class="note">
-      已依上述邏輯寫成 EA 並放進 <code>MQL5/Experts/</code>。掛在任一張圖表上即可同時管理 8 檔貨幣對。
+      已依上述邏輯寫成 EA 並放進 <code>MQL5/Experts/</code>。掛在任一張圖表上即可同時管理 10 檔貨幣對。
     </p>
     <div class="cols">
       <div class="block">
@@ -489,14 +502,17 @@
     <h2>這份數字怎麼算出來的</h2>
     <div class="cols">
       <div class="block flag">
-        <h3>這 8 檔是怎麼選出來的</h3>
+        <h3>這 10 檔是怎麼選出來的</h3>
         <ul>
-          <li>第一層結構性篩選（15 檔）：排除 <code>ATR ÷ 點差 &lt; 10</code> 的 EURGBP、NZDUSD，
-            以及長期受 SNB 干預壓抑波動的 EURCHF。</li>
-          <li>第二層（這份報告）：取 15 檔中<strong>全樣本 Sharpe 最高的 8 檔</strong>——
-            AUDCAD、AUDNZD、NZDCAD、CADJPY、AUDUSD、GBPAUD、USDCHF、EURAUD。</li>
+          <li>把 G8 貨幣（USD/EUR/GBP/JPY/CHF/CAD/AUD/NZD）兩兩組合的
+            <strong>全部 28 檔</strong>都用同一套引擎、同一段 Pepperstone 真實報價跑過一遍，
+            再依 Sharpe 取前 10。</li>
+          <li>踢掉的包括原本在名單內的 <strong>AUDNZD</strong>（Sharpe −0.10，唯一負報酬，
+            權益曲線與時間的相關係數 −0.26 等於純雜訊）、<strong>USDCHF</strong>（平滑度僅 0.37，
+            走勢崎嶇）、<strong>GBPAUD</strong>（Sharpe 0.67 偏弱），以及 USDCAD、EURUSD、GBPUSD
+            等均值回歸邊際過薄的主流盤。</li>
           <li>這一層是<strong>依歷史績效排名挑選</strong>，而樣本內/外切分測試顯示這類排名的樣本外相關性
-            接近零（−0.03）。換句話說，沒有證據保證這 8 檔在未來仍會是表現最好的 8 檔。</li>
+            接近零（−0.03）。換句話說，沒有證據保證這 10 檔在未來仍會是表現最好的 10 檔。</li>
         </ul>
       </div>
       <div class="block">
@@ -732,6 +748,7 @@ const COLS = [
   { k: "pf", t: "獲利因子", f: v => fmt(v) },
   { k: "trades", t: "交易數", f: v => v },
   { k: "sl", t: "停損次數", f: v => v },
+  { k: "spread", t: "點差(pips)", f: (v, row) => v.toFixed(1) + (row.est ? " *" : "") },
   { k: "lots", t: "首單手數", f: v => v.toFixed(3) },
   { k: "maxlots", t: "滿倉手數", f: v => v.toFixed(3) },
 ];
@@ -763,7 +780,7 @@ function render() {
         const bar = el("div", "bar");
         bar.style.width = Math.max(2, Math.abs(v) / maxCalmar * 78) + "%";
         td.append(bar, el("span", "", col.f(v)));
-      } else td.textContent = col.f(v);
+      } else td.textContent = col.f(v, p);
       tr.append(td);
     });
     body.append(tr);
@@ -785,7 +802,7 @@ const foot = document.getElementById("perf-foot");
 const ftr = el("tr");
 const fvals = [DATA.meta.n + " 檔平均", pct(avg("ann")), pct(avg("mdd")), fmt(avg("sharpe")), fmt(avg("calmar")),
   pct(avg("total")), avg("win").toFixed(1) + "%", fmt(avg("pf")), Math.round(avg("trades")),
-  Math.round(avg("sl")), avg("lots").toFixed(3), avg("maxlots").toFixed(3)];
+  Math.round(avg("sl")), "—", avg("lots").toFixed(3), avg("maxlots").toFixed(3)];
 fvals.forEach((v, i) => ftr.append(el("td", i === 0 ? "left" : "", v)));
 foot.append(ftr);
 
@@ -887,7 +904,7 @@ foot.append(ftr);
 
     const card = el("div", "sm");
     const head = el("div", "sm-head");
-    head.append(el("span", "sm-name", p.name),
+    head.append(el("span", "sm-name", p.name + (p.est ? " *" : "")),
                 el("span", "sm-ann" + (p.ann < 0 ? " neg" : ""), pct(p.ann)));
     const meta = el("div", "sm-meta");
     meta.textContent = `MDD ${pct(p.mdd)} · Sharpe ${fmt(p.sharpe)} · Calmar ${fmt(p.calmar)}`;
