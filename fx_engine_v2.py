@@ -248,11 +248,25 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
         else:
             equity[i] = cash
 
+    # 回測結束當下若還持有部位（尚未等到止盈/停損），記錄下來給「目前持倉」區塊用
+    open_position = None
+    if side != 0:
+        last_close = close[-1]
+        unreal_pnl = qty * (last_close - avg_entry) * r_quote[-1] * side
+        open_position = dict(
+            pair=pair, side="LONG" if side > 0 else "SHORT",
+            entry_time=entry_time, entry_price=entry_l1_price, avg_entry=avg_entry,
+            layers=layer, lots=round(qty / CONTRACT_SIZE, 4),
+            current_price=float(last_close), unrealized_pnl=round(float(unreal_pnl), 2),
+            hold_bars=(n - 1) - entry_i, as_of=idx[-1],
+        )
+
     eq = pd.Series(equity, index=idx)
     cap = initial_capital * capital_scale
     total_ret = (eq.iloc[-1] - cap) / cap * 100.0
     peak = eq.cummax()
     mdd = abs(((eq - peak) / peak).min()) * 100.0
+    cur_dd = abs((eq.iloc[-1] - peak.iloc[-1]) / peak.iloc[-1]) * 100.0
     years = (idx[-1] - idx[0]).total_seconds() / 86400.0 / 365.25
     rets = eq.pct_change().dropna()
     sharpe = rets.mean() / rets.std() * np.sqrt(n / years) if rets.std() > 0 else 0.0
@@ -263,14 +277,14 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
 
     return dict(
         pair=pair, total_return_pct=total_ret, ann_return_pct=ann, max_dd_pct=mdd,
-        sharpe=sharpe, calmar=ann / mdd if mdd > 0.01 else np.nan,
+        current_dd_pct=cur_dd, sharpe=sharpe, calmar=ann / mdd if mdd > 0.01 else np.nan,
         win_rate=len(wins) / len(pnls) * 100.0 if pnls else 0.0,
         n_trades=len(pnls), n_tp=sum(1 for k, _ in trades if k == "TP"),
         n_sl=sum(1 for k, _ in trades if k == "SL"),
         profit_factor=(sum(wins) / abs(sum(losses))) if losses and sum(losses) != 0 else np.nan,
         median_lots=float(np.median(lots_log)) if lots_log else 0.0,
         max_lots=float(np.max(lots_log)) if lots_log else 0.0,
-        years=years, equity=eq, trade_log=trade_log,
+        years=years, equity=eq, trade_log=trade_log, open_position=open_position,
     )
 
 

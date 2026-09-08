@@ -87,7 +87,7 @@ def run_backtest():
     rates = build_usd_rates(need)
     costs_all = load_real_costs()
 
-    perf_rows, curves, all_trades = [], {}, []
+    perf_rows, curves, all_trades, open_positions = [], {}, [], []
     for p in TOP8:
         bars = add_indicators(load_4h(p))
         r = run_engine_v2(bars, p, costs_all[p], rates)
@@ -98,16 +98,18 @@ def run_backtest():
             獲利因子=r["profit_factor"], 交易數=r["n_trades"], 止盈=r["n_tp"], 停損=r["n_sl"],
             中位手數=r["median_lots"], 最大手數=r["max_lots"], 回測年數=r["years"]))
         all_trades.extend(r["trade_log"])
+        if r["open_position"] is not None:
+            open_positions.append(r["open_position"])
 
     perf = pd.DataFrame(perf_rows).sort_values("Sharpe", ascending=False).reset_index(drop=True)
     port = run_portfolio_v2(TOP8)
     port_curve = (port["equity"] / INITIAL_CAPITAL - 1.0) * 100.0
 
     trades_df = pd.DataFrame(all_trades).sort_values("exit_time", ascending=False).reset_index(drop=True)
-    return perf, curves, port, port_curve, trades_df
+    return perf, curves, port, port_curve, trades_df, open_positions
 
 
-def build_payload(perf, curves, port, port_curve, trades_df):
+def build_payload(perf, curves, port, port_curve, trades_df, open_positions):
     order = perf["貨幣對"].tolist()
     step = 2
     cs_idx = sorted(set().union(*[set(c.index) for c in curves.values()]))
@@ -141,9 +143,24 @@ def build_payload(perf, curves, port, port_curve, trades_df):
             pnl=round(float(t["pnl_usd"]), 2), hold=int(t["hold_bars"]),
         ))
 
+    positions_json = []
+    for p in open_positions:
+        positions_json.append(dict(
+            pair=p["pair"], side=p["side"],
+            entry_time=p["entry_time"].strftime("%Y-%m-%d %H:%M"),
+            entry_price=round(float(p["entry_price"]), 5),
+            avg_entry=round(float(p["avg_entry"]), 5),
+            layers=int(p["layers"]), lots=round(float(p["lots"]), 4),
+            current_price=round(float(p["current_price"]), 5),
+            unrealized_pnl=round(float(p["unrealized_pnl"]), 2),
+            hold_bars=int(p["hold_bars"]),
+            as_of=p["as_of"].strftime("%Y-%m-%d %H:%M"),
+        ))
+
     payload = dict(
         pairs=pairs_json,
         portfolio=dict(ann=round(port["ann_return_pct"], 2), mdd=round(port["max_dd_pct"], 2),
+                       currentDd=round(port["current_dd_pct"], 2),
                        sharpe=round(port["sharpe"], 2), calmar=round(port["calmar"], 2),
                        total=round(port["total_return_pct"], 2), win=round(port["win_rate"], 1),
                        trades=int(port["n_trades"]), avgDep=round(port["avg_deployed_pct"], 1),
@@ -151,6 +168,7 @@ def build_payload(perf, curves, port, port_curve, trades_df):
                        lots=round(port["median_lots"], 4), maxlots=round(port["max_lots"], 4),
                        curve=[round(float(v), 3) for v in pc]),
         trades=trades_json,
+        positions=positions_json,
         meta=dict(start=str(dts[0].date()), end=str(dts[-1].date()), n=len(pairs_json),
                   n_trades=len(trades_json),
                   dates=[str(d.date()) for d in dts],
@@ -164,14 +182,18 @@ def main():
     refresh_price_data()
 
     print("\n=== 2. 執行回測 (fx_engine_v2, Top-8, 4H) ===")
-    perf, curves, port, port_curve, trades_df = run_backtest()
+    perf, curves, port, port_curve, trades_df, open_positions = run_backtest()
     print(perf.round(3).to_string(index=False))
     print(f"\n組合: 年化 {port['ann_return_pct']:.2f}% MDD {port['max_dd_pct']:.2f}% "
-          f"Sharpe {port['sharpe']:.2f} Calmar {port['calmar']:.2f}")
+          f"目前回撤 {port['current_dd_pct']:.2f}% Sharpe {port['sharpe']:.2f} Calmar {port['calmar']:.2f}")
     print(f"總交易明細筆數: {len(trades_df)}")
+    print(f"目前持倉部位: {len(open_positions)} 檔")
+    for p in open_positions:
+        print(f"  {p['pair']} {p['side']} 第{p['layers']}層 均價{p['avg_entry']:.5f} "
+              f"現價{p['current_price']:.5f} 未實現損益 ${p['unrealized_pnl']:+.2f}")
 
     print("\n=== 3. 產生報告資料 ===")
-    payload = build_payload(perf, curves, port, port_curve, trades_df)
+    payload = build_payload(perf, curves, port, port_curve, trades_df, open_positions)
 
     os.makedirs(DOCS_DIR, exist_ok=True)
     with open(os.path.join(DOCS_DIR, "data.json"), "w", encoding="utf-8") as f:

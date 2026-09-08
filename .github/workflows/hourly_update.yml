@@ -1,9 +1,18 @@
 name: 每小時更新外匯網格策略報告
 
+# GitHub 的排程觸發只是「best effort」，尤其整點附近容易塞車延遲數小時
+# (官方文件明講)。所以改成每 15 分鐘檢查一次，工作內容自己判斷「距離上次
+# 真的執行是否已經超過 55 分鐘」，沒到就直接結束——這樣即使某幾次檢查點
+# 被延遲，還是能撐住接近每小時的更新頻率，而不會真的每 15 分鐘都重抓一次。
 on:
   schedule:
-    - cron: "0 * * * *"   # 每小時整點 (UTC)
-  workflow_dispatch: {}    # 允許在 Actions 頁面手動觸發
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "略過時間間隔檢查，強制執行"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -28,10 +37,23 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
+      - name: 檢查距離上次更新是否已滿 55 分鐘
+        id: gate
+        run: |
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            echo "手動觸發，強制執行"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            RESULT=$(python3 scripts/check_freshness.py)
+            echo "should_run=$RESULT" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install dependencies
+        if: steps.gate.outputs.should_run == 'true'
         run: pip install -r requirements.txt
 
       - name: 還原上次抓到的報價快取（Yahoo Finance 偶爾限流時的備援）
+        if: steps.gate.outputs.should_run == 'true'
         uses: actions/cache@v4
         with:
           path: data_fx_1h
@@ -40,9 +62,11 @@ jobs:
             fx-data-
 
       - name: 抓取最新外匯報價並重新回測
+        if: steps.gate.outputs.should_run == 'true'
         run: python scripts/generate_report.py
 
       - name: 提交並推送更新（僅在有變動時）
+        if: steps.gate.outputs.should_run == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -51,5 +75,6 @@ jobs:
             echo "沒有變動，略過提交"
           else
             git commit -m "自動更新：外匯網格策略報告 ($(date -u '+%Y-%m-%d %H:%M UTC'))"
+            git pull --rebase origin main
             git push
           fi

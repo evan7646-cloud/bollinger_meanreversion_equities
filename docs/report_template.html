@@ -102,7 +102,7 @@
   .note { color: var(--ink-2); margin: 0 0 20px; max-width: 68ch; font-size: 13.5px; }
 
   /* ---------- hero metrics ---------- */
-  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--rule);
+  .tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; background: var(--rule);
            border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; }
   .tile { background: var(--surface); padding: 18px 20px 16px; }
   .tile .lab { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
@@ -111,6 +111,9 @@
                letter-spacing: -.02em; margin-top: 4px; font-variant-numeric: tabular-nums; }
   .tile .sub { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
   .tile.is-loss .val { color: var(--loss); }
+  .tile .lab-row { display: flex; align-items: center; gap: 5px; }
+  .live-dot { width: 6px; height: 6px; border-radius: 50%; background: #1baf7a; flex: none;
+              box-shadow: 0 0 0 3px rgba(27, 175, 122, .18); }
 
   .support { display: flex; flex-wrap: wrap; gap: 6px 26px; margin-top: 14px;
              font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
@@ -213,6 +216,28 @@
                 box-shadow: 0 0 0 3px rgba(27, 175, 122, .18); }
   .fresh a { color: var(--accent); }
 
+  /* ---------- open positions ---------- */
+  .pos-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 18px; }
+  .pos-card { background: var(--surface); border: 1px solid var(--rule); border-radius: 3px;
+              padding: 14px 16px; }
+  .pos-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .pos-pair { font-family: var(--mono); font-size: 14px; font-weight: 600; letter-spacing: .02em; }
+  .pos-side { font-family: var(--mono); font-size: 11px; font-weight: 500; padding: 2px 7px;
+              border-radius: 2px; letter-spacing: .04em; }
+  .pos-side.long { color: #1baf7a; background: rgba(27, 175, 122, .12); }
+  .pos-side.short { color: var(--loss); background: var(--loss-fill); }
+  .pos-pnl { font-family: var(--mono); font-size: 19px; font-weight: 500; margin-top: 10px;
+             font-variant-numeric: tabular-nums; }
+  .pos-pnl.neg { color: var(--loss); }
+  .pos-pnl.pos { color: #1baf7a; }
+  .pos-rows { margin-top: 8px; display: flex; flex-direction: column; gap: 3px; }
+  .pos-row { display: flex; justify-content: space-between; font-size: 12px;
+             font-family: var(--mono); color: var(--ink-2); }
+  .pos-row b { color: var(--ink); font-weight: 500; }
+  .pos-empty { padding: 28px; text-align: center; color: var(--ink-3); font-size: 13.5px;
+               background: var(--surface); border: 1px solid var(--rule); border-radius: 3px;
+               margin-top: 18px; }
+
   /* ---------- trade log ---------- */
   .tradebar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 14px; }
   .tradebar select, .tradebar input {
@@ -242,10 +267,12 @@
   @media (max-width: 900px) {
     .sm-grid { grid-template-columns: repeat(2, 1fr); }
     .tiles { grid-template-columns: repeat(2, 1fr); }
+    .pos-grid { grid-template-columns: repeat(2, 1fr); }
     .cols { grid-template-columns: 1fr; }
   }
   @media (max-width: 560px) {
     .sm-grid { grid-template-columns: 1fr; }
+    .pos-grid { grid-template-columns: 1fr; }
     h1 { font-size: 25px; }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -317,6 +344,17 @@
         <div class="tooltip" id="port-tip"></div>
       </div>
     </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">即時狀態</p>
+    <h2>目前持倉部位</h2>
+    <p class="note">
+      截至最後一次資料更新（每小時刷新）時，8 檔中尚未觸發止盈或停損、仍持有中的部位。
+      均價含 DCA 加碼後的最終持倉均價，未實現損益以最新收盤價估算，尚未真正入袋，會隨行情波動。
+    </p>
+    <div id="pos-empty" class="pos-empty" hidden>目前 8 檔全部空手，沒有任何持倉中的部位。</div>
+    <div class="pos-grid" id="pos-grid"></div>
   </section>
 
   <section>
@@ -499,16 +537,58 @@ document.getElementById("gen-at").textContent = DATA.meta.generated_at || "—";
 const P = DATA.portfolio;
 const tileDefs = [
   { lab: "年化報酬", val: pct(P.ann), sub: "總報酬 " + pct(P.total) + " ／ " + P.years + " 年" },
-  { lab: "最大回撤", val: pct(P.mdd), sub: "谷底發生於樣本前段", loss: true },
+  { lab: "最大回撤", val: pct(P.mdd), sub: "歷史最深回撤（樣本內）", loss: true },
+  {
+    lab: "目前回撤", val: pct(P.currentDd), sub: "截至 " + (DATA.meta.generated_at || "—"),
+    loss: P.currentDd > 0.05, live: true,
+  },
   { lab: "Sharpe", val: fmt(P.sharpe), sub: "以 4H 報酬年化" },
   { lab: "Calmar", val: fmt(P.calmar), sub: "年化報酬 ÷ 最大回撤" },
 ];
 const tiles = document.getElementById("tiles");
 tileDefs.forEach(t => {
   const d = el("div", "tile" + (t.loss ? " is-loss" : ""));
-  d.append(el("div", "lab", t.lab), el("div", "val", t.val), el("div", "sub", t.sub));
+  const lab = t.live
+    ? (() => { const r = el("div", "lab-row"); r.append(el("span", "live-dot"), el("span", "", t.lab)); return r; })()
+    : el("div", "lab", t.lab);
+  d.append(lab, el("div", "val", t.val), el("div", "sub", t.sub));
   tiles.append(d);
 });
+
+/* ---------------- 目前持倉部位 ---------------- */
+(function () {
+  const grid = document.getElementById("pos-grid");
+  const empty = document.getElementById("pos-empty");
+  const positions = DATA.positions || [];
+  if (!positions.length) {
+    grid.hidden = true;
+    empty.hidden = false;
+    return;
+  }
+  positions.forEach(p => {
+    const card = el("div", "pos-card");
+    const head = el("div", "pos-head");
+    head.append(el("span", "pos-pair", p.pair),
+                el("span", "pos-side " + (p.side === "LONG" ? "long" : "short"), p.side === "LONG" ? "多" : "空"));
+    const pnl = el("div", "pos-pnl " + (p.unrealized_pnl >= 0 ? "pos" : "neg"),
+                   (p.unrealized_pnl >= 0 ? "+$" : "−$") + Math.abs(p.unrealized_pnl).toFixed(2));
+    const rows = el("div", "pos-rows");
+    [
+      ["層數", p.layers + " / 4"],
+      ["手數", p.lots.toFixed(3)],
+      ["均價", p.avg_entry.toFixed(5)],
+      ["現價", p.current_price.toFixed(5)],
+      ["進場", p.entry_time.slice(0, 10)],
+      ["持倉", p.hold_bars + " 根 (4H)"],
+    ].forEach(([k, v]) => {
+      const row = el("div", "pos-row");
+      row.append(el("span", "", k), el("b", "", v));
+      rows.append(row);
+    });
+    card.append(head, pnl, rows);
+    grid.append(card);
+  });
+})();
 /* ---------------- $100K 推算 ---------------- */
 (function () {
   const CAP = 100000;

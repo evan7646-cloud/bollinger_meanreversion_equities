@@ -124,6 +124,7 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None):
     eq = pd.Series(equity, index=pd.DatetimeIndex(idx))
     total = (eq.iloc[-1] - capital) / capital * 100.0
     peak = eq.cummax(); mdd = abs(((eq - peak) / peak).min()) * 100.0
+    cur_dd = abs((eq.iloc[-1] - peak.iloc[-1]) / peak.iloc[-1]) * 100.0
     years = (idx[-1] - idx[0]).total_seconds() / 86400.0 / 365.25
     rets = eq.pct_change().dropna()
     sharpe = rets.mean() / rets.std() * np.sqrt(len(eq) / years) if rets.std() > 0 else 0.0
@@ -131,7 +132,8 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None):
     pnls = [t[1] for t in trades]
     wins = [x for x in pnls if x > 0]
 
-    return dict(total_return_pct=total, ann_return_pct=ann, max_dd_pct=mdd, sharpe=sharpe,
+    return dict(total_return_pct=total, ann_return_pct=ann, max_dd_pct=mdd,
+                current_dd_pct=cur_dd, sharpe=sharpe,
                 calmar=ann / mdd if mdd > 0.01 else np.nan,
                 win_rate=len(wins) / len(pnls) * 100.0 if pnls else 0.0, n_trades=len(pnls),
                 avg_deployed_pct=deployed.mean() / capital * 100.0,
