@@ -218,11 +218,26 @@ EURUSD/USDJPY/EURGBP/EURJPY/GBPJPY/CADJPY/CHFJPY
 | 止盈 | `min(EMA50, 均價+1ATR)`；因 EMA50 會移動，由 EA 監控，另在均價+1ATR 掛經紀商端 TP 當斷線保護 |
 | 點差過濾 | 即時點差 > 該對中位數 ×3 時禁止新開倉（實測極端時段可達中位數的 10~40 倍） |
 | 總曝險上限 | 所有部位名目合計 ≤ 淨值 60% |
-| 非重繪 | EMA/ATR 一律讀已收盤 H4 K 棒（shift=1），觸價判斷用即時 Bid/Ask |
+| 非重繪 | EMA/ATR 一律讀已收盤 4H K 棒，觸價判斷用即時 Bid/Ask |
 | 帳戶類型 | 部位以「合計」方式讀取，netting 與 hedging 帳戶皆可運作；層數存於 GlobalVariable，跨重啟保留 |
 
-**上線前務必做的三件事**：MetaEditor 按 F7 編譯確認 0 errors → 確認經紀商品種代碼是否需要後綴
-（如 `AUDCAD.r`）→ **先用模擬帳戶跑至少一個月**，比對成交紀錄與回測邏輯是否吻合。
+### v2：時區對齊（實盤持倉跟網頁對不上的真正原因）
+
+實測發現實盤持倉跟網頁回測對不上（8檔中2檔方向/有無完全不同、2檔層數不同）。原因：
+**Python 回測用 UTC 時間切 4H K棒**（yfinance 資料經 `pd.to_datetime(..., utc=True)` 轉換後對齊到
+00:00/04:00/08:00...UTC），但 v1 的 EA 用 MT5 內建的 `PERIOD_H4`，那是照 **broker 伺服器時區**切的
+（實測約 UTC+3，非 UTC+0）。同一時刻兩邊看到的 K棒範圍不同 → EMA/ATR 不同 → 上下軌位置不同 →
+觸發進場/加倉/止盈的時間點自然對不上，4層DCA的策略差1根K棒就足以整層對不齊。
+
+v2 的修正：EA 不再用 `iMA`/`iATR` 讀 MT5 內建 H4，改成自己用 `PERIOD_M15` 原始資料，
+依 `InpBrokerGmtOffsetHours`（實測約 3）把每根 M15 的時間轉成 UTC，手動組出跟 Python 完全一致的
+UTC 對齊 4H K棒，再用相同公式算 EMA50（`ewm(span=50,adjust=False)`遞迴公式）與 ATR20
+（TR 簡單移動平均，不是 Wilder 平滑）。**現在網頁才是真正唯一的標準，EA 是照網頁的時間基準對齊過去的。**
+
+**上線前務必做的四件事**：MetaEditor 按 F7 編譯確認 0 errors → 確認經紀商品種代碼是否需要後綴
+（如 `AUDCAD.r`）→ **確認 `InpBrokerGmtOffsetHours` 是否正確**（EA 啟動時 Journal 會印出
+伺服器時間換算成UTC的結果，自行核對；注意有些broker伺服器會隨美國/歐洲夏令時間調整，
+偏移量可能一年內會變動，需要定期覆核）→ **先用模擬帳戶跑至少一個月**，比對成交紀錄與網頁是否吻合。
 
 ---
 
