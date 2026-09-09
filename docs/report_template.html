@@ -1,4 +1,4 @@
-<title>網格策略 Top-10 貨幣對</title>
+<title>網格策略貨幣對績效</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@600&display=swap">
@@ -302,17 +302,18 @@
 <div class="wrap">
   <header>
     <p class="kicker">4H 自適應通道網格 · 外匯回測</p>
-    <h1>Sharpe 前 10 檔貨幣對績效</h1>
+    <h1>交易清單貨幣對績效</h1>
     <p class="lede">
-      從 G8 貨幣兩兩組合的<strong>全部 28 檔</strong>（major + minor + cross）中，取 Sharpe 值最高的 10 檔，
-      各自以 $25,000 獨立本金回測，並模擬「單一帳戶同時交易這 10 檔」的共用資金池組合。成本含真實點差、佣金與隔夜利息，
+      從 G8 貨幣兩兩組合的<strong>全部 28 檔</strong>（major + minor + cross）中，取 Sharpe 值最高的一批，
+      再人工微調（見下方 v3.4 說明），目前共 <strong>11 檔</strong>，
+      各自以 $25,000 獨立本金回測，並模擬「單一帳戶同時交易這 11 檔」的共用資金池組合。成本含真實點差、佣金與隔夜利息，
       止盈與 4 ATR 硬停損均按原始策略邏輯保留。
     </p>
     <p class="lede" style="margin-top:10px;">
       <strong>先說一個必須看到的反面證據</strong>：同一份資料切成前 60%／後 40% 檢驗過，
       用前段歷史排名挑出的最佳 6 檔，在後段樣本外的表現反而<strong>不如</strong>當初排名最差的 6 檔
-      （樣本內外 Sharpe 相關性 −0.03，等於零）。這 10 檔是用<strong>全樣本</strong>排出來的最佳結果，
-      本質上仍是「事後挑選」——請把下面的數字當成這批貨幣對的歷史特徵參考，而非對未來排名的保證。
+      （樣本內外 Sharpe 相關性 −0.03，等於零）。這批標的本質上仍是「事後挑選＋人工判斷」——
+      請把下面的數字當成這批貨幣對的歷史特徵參考，而非對未來排名的保證。
     </p>
     <div class="callout">
       <strong>v2 修正：跨幣別部位計算</strong>
@@ -344,6 +345,19 @@
       <strong>淘汰</strong>：AUDNZD（Sharpe −0.10，唯一負報酬且曲線是純雜訊）、
       USDCHF（平滑度僅 0.37）、GBPAUD（Sharpe 0.67 偏弱）、NZDCAD（掉出前 10）。
       <span style="opacity:.65">（此版本中 GBPNZD、GBPCHF、NZDCHF 三檔尚無實測點差，暫用 2.5 pips 估計值——已於 v3.3 補實測。）</span>
+    </div>
+    <div class="callout">
+      <strong>v3.4 人工調整標的：拿掉 CADJPY，加入 CADCHF、GBPCAD（10 檔 → 11 檔）</strong>
+      前面幾版都是用歷史 Sharpe 排名決定標的，這次是<strong>人工判斷</strong>介入：CADJPY 近期
+      JPY 走勢趨勢性變強，不利於均值回歸邏輯——它的權益曲線也看得到佐證：2026 年 8 月有一次
+      單筆虧損 $103 的停損（3 層 DCA 加碼後跟不上趨勢），MDD 0.83% 是當時 10 檔裡最差的一個。
+      拿掉它，換上點差更窄、曲線更平滑的 CADCHF（Sharpe 1.39、Calmar 2.36）與 GBPCAD
+      （Sharpe 1.02，2026-09 全數改用實測點差後才進入候選）。
+      <br><br>
+      這不是純改善：組合年化從 9.68% 升到 <strong>10.13%</strong>，但 Calmar 從 5.77 降到
+      <strong>5.43</strong>（MDD 1.68% → 1.87%）——用一點風險調整後績效換更高的絕對報酬。
+      這個取捨是使用者對近期市場狀態的判斷，回測資料無法驗證「JPY 未來是否持續趨勢」，
+      在此如實記錄，不做美化。
     </div>
     <div class="callout">
       <strong>v3.3 補實測：28 檔全部改用真實點差，估計值歸零</strong>
@@ -400,11 +414,11 @@
 
   <section>
     <p class="eyebrow">組合結果</p>
-    <h2>單一 $25,000 帳戶同時交易 Top-10</h2>
+    <h2>單一 $25,000 帳戶同時交易 11 檔</h2>
     <p class="note">
-      10 檔<strong>全部</strong>使用 MT5 broker 過去 7 天、每天 48 個時段的真實歷史點差取樣（中位數）
+      11 檔<strong>全部</strong>使用 MT5 broker 過去 7 天、每天 48 個時段的真實歷史點差取樣（中位數）
       ＋真實隔夜利息，沒有任何估計值。
-      標的從 8 檔擴到 10 檔後，同時在場的部位變多，資金利用率跟著上升，
+      標的數量調整後，同時在場的部位跟著變動，資金利用率也會改變，
       實際的平均／峰值動用資金見下方那一列。峰值超過 100% 代表這是保證金槓桿而非現金交易。
     </p>
     <div class="cap-row">
@@ -435,16 +449,16 @@
     <p class="eyebrow">即時狀態</p>
     <h2>目前持倉部位</h2>
     <p class="note">
-      截至最後一次資料更新（每小時刷新）時，10 檔中尚未觸發止盈或停損、仍持有中的部位。
+      截至最後一次資料更新（每小時刷新）時，交易清單中尚未觸發止盈或停損、仍持有中的部位。
       均價含 DCA 加碼後的最終持倉均價，未實現損益以最新收盤價估算，尚未真正入袋，會隨行情波動。
     </p>
-    <div id="pos-empty" class="pos-empty" hidden>目前 10 檔全部空手，沒有任何持倉中的部位。</div>
+    <div id="pos-empty" class="pos-empty" hidden>目前全部空手，沒有任何持倉中的部位。</div>
     <div class="pos-grid" id="pos-grid"></div>
   </section>
 
   <section>
     <p class="eyebrow">逐檔績效</p>
-    <h2>Top-10 貨幣對完整指標</h2>
+    <h2>交易清單完整指標</h2>
     <p class="note">
       預設依 Sharpe 由高至低排列（本次篩選依據）。點選欄位標題可改變排序，例如切到 Calmar 檢查另一種風險調整角度。
     </p>
@@ -518,7 +532,7 @@
     <p class="eyebrow">實盤部署</p>
     <h2>MT5 EA：ChannelGridDCA_EA.mq5</h2>
     <p class="note">
-      已依上述邏輯寫成 EA 並放進 <code>MQL5/Experts/</code>。掛在任一張圖表上即可同時管理 10 檔貨幣對。
+      已依上述邏輯寫成 EA 並放進 <code>MQL5/Experts/</code>。掛在任一張圖表上即可同時管理清單內所有貨幣對。
     </p>
     <div class="cols">
       <div class="block">
@@ -563,7 +577,7 @@
     <h2>這份數字怎麼算出來的</h2>
     <div class="cols">
       <div class="block flag">
-        <h3>這 10 檔是怎麼選出來的</h3>
+        <h3>這批標的是怎麼選出來的</h3>
         <ul>
           <li>把 G8 貨幣（USD/EUR/GBP/JPY/CHF/CAD/AUD/NZD）兩兩組合的
             <strong>全部 28 檔</strong>都用同一套引擎、同一段 Pepperstone 真實報價跑過一遍，
@@ -573,7 +587,7 @@
             走勢崎嶇）、<strong>GBPAUD</strong>（Sharpe 0.67 偏弱），以及 USDCAD、EURUSD、GBPUSD
             等均值回歸邊際過薄的主流盤。</li>
           <li>這一層是<strong>依歷史績效排名挑選</strong>，而樣本內/外切分測試顯示這類排名的樣本外相關性
-            接近零（−0.03）。換句話說，沒有證據保證這 10 檔在未來仍會是表現最好的 10 檔。</li>
+            接近零（−0.03）。換句話說，沒有證據保證這批標的在未來仍會是表現最好的一批。</li>
         </ul>
       </div>
       <div class="block">

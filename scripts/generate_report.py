@@ -2,7 +2,7 @@
 產生 GitHub Pages 靜態報告（docs/index.html）
 
 流程：
-  1. 用 TradingView 上的 Pepperstone 報價（PEPPERSTONE:xxx）重新抓取 Top-10 貨幣對的
+  1. 用 TradingView 上的 Pepperstone 報價（PEPPERSTONE:xxx）重新抓取交易清單貨幣對的
      1H 報價，並轉換成 MT5 broker 時間（見 fx_data_pepperstone.py 的時區換算說明）
   2. 重採樣為「跟 MT5 內建 H4 對齊」的 4H K棒，跑 fx_engine_v2 的通道均值回歸 DCA 網格
      （雙向、較近止盈、4ATR硬停損）
@@ -29,17 +29,17 @@ import pandas as pd
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-# G8 全 28 檔掃描後、依 Sharpe 取前 10 檔（fx_28pairs_scan_results.csv）
-# ⚠️ GBPNZD / GBPCHF / NZDCHF 的點差與隔夜利息目前是保守估計值，尚未用
-#    ExportForexRealCosts.mq5 實測過，網頁上會標示出來
-TOP8 = ["AUDCAD", "AUDCHF", "GBPNZD", "CADJPY", "GBPCHF",
-        "EURCHF", "NZDUSD", "EURAUD", "AUDUSD", "NZDCHF"]
+# G8 全 28 檔掃描後、依 Sharpe 排序，人工微調後的清單（fx_28pairs_scan_results.csv）
+# v3.4：拿掉 CADJPY（近期 JPY 趨勢性強，不利均值回歸策略），
+# 加入 CADCHF、GBPCAD。28 檔全數使用 ExportForexRealCosts.mq5 實測點差，無估計值。
+TOP8 = ["AUDCAD", "AUDCHF", "GBPNZD", "GBPCHF", "EURCHF",
+        "NZDUSD", "EURAUD", "AUDUSD", "NZDCHF", "CADCHF", "GBPCAD"]
 DATA_DIR = os.path.join(ROOT, "data_fx_1h")
 DOCS_DIR = os.path.join(ROOT, "docs")
 
 
 def refresh_price_data():
-    """用 TradingView 的 Pepperstone 報價重新抓取 Top-10 及匯率換算所需的所有貨幣對（1H）。"""
+    """用 TradingView 的 Pepperstone 報價重新抓取交易清單及匯率換算所需的所有貨幣對（1H）。"""
     from fx_data_pepperstone import fetch_pepperstone_1h, local_utc_offset_hours, BROKER_GMT_OFFSET_HOURS
     from fx_engine_v2 import PAIR_CCY
 
@@ -179,7 +179,7 @@ def main():
     print("=== 1. 重新抓取真實外匯報價 (TradingView Pepperstone, 1H) ===")
     refresh_price_data()
 
-    print("\n=== 2. 執行回測 (fx_engine_v2, Top-10, 4H) ===")
+    print("\n=== 2. 執行回測 (fx_engine_v2, 交易清單, 4H) ===")
     perf, curves, port, port_curve, trades_df, open_positions = run_backtest()
     print(perf.round(3).to_string(index=False))
     print(f"\n組合: 年化 {port['ann_return_pct']:.2f}% MDD {port['max_dd_pct']:.2f}% "
