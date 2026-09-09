@@ -348,6 +348,32 @@
       <code>ExportForexRealCosts.mq5</code> 把這幾檔補進調查清單後才有——在那之前，
       這三檔的績效數字請保留懷疑。
     </div>
+    <div class="callout">
+      <strong>v3.2 修正：拿掉換日假跳空、指標改用前一根已收盤 K 棒（年化 11.18% → 9.47%）</strong>
+      這兩個修正是拿<strong>實盤持倉去對帳</strong>對出來的——回測顯示 AUDCHF 與 GBPNZD 已經止盈平倉，
+      實盤兩檔卻都還開著。查下去發現兩件事：
+      <br><br>
+      <strong>① broker 00:00（＝21:00 UTC）那一根有系統性假跳空。</strong>
+      那是換日結算、全日流動性最低的一小時，點差會擴到平常的十幾倍。實測這一根「開盤對前根收盤」
+      的跳空中位數是其他時段的 <strong>50～80 倍</strong>（AUDCHF 8.2 pips vs 其餘時段 0.1 pips；
+      GBPNZD 10.0 vs 0.2），最大到 254 pips。舊版拿這根尖刺的 high/low 去觸發進出場，
+      會憑空生出實盤根本拿不到的止盈——全期 1,710 筆裡有 <strong>80 筆止盈只有這根尖刺碰得到</strong>
+      （之後三小時再也沒回到那個價位），金額佔全期淨利的 <strong>6.7%</strong>，
+      而且<strong>全是止盈、零停損</strong>：停損距離 4×ATR 太遠，尖刺只夠灌水、不夠傷人，是單向偏誤。
+      現在重採樣成 4H 之前先把這一根整根丟掉，00:00–04:00 那根改由 01/02/03 三根組成。
+      <br><br>
+      <strong>② 舊版用「當根」的 EMA/ATR 去比對「當根」的 high/low，是輕微的未來函數。</strong>
+      實盤 EA 呼叫的是 <code>CopyBuffer(handle, 0, 1, 1, buf)</code>，<code>shift=1</code> 指前一根
+      <strong>已收盤</strong>的 K 棒，不可能用到還在跑的當根。現在回測一律把 EMA/ATR 往後推一根，
+      跟 EA 完全對齊。
+      <br><br>
+      <strong>代價與收穫</strong>：年化從 11.18% 降到 <strong>9.47%</strong>（−1.71 個百分點），
+      但最大回撤同時從 2.38% 降到 <strong>1.69%</strong>，
+      所以 <strong>Calmar 反而由 4.69 升到 5.61</strong>——報酬變少但風險特徵更好。
+      修正後回測的未平倉部位與實盤帳戶<strong>七檔方向全對、五檔連 DCA 層數都一致</strong>
+      （修正前只有兩檔對得上）。用修正後的引擎重掃 28 檔，Top-10 有 9 檔不變，
+      名單沒有被這個 bug 帶歪。
+    </div>
     <dl class="runspec">
       <div><dt>週期</dt><dd>4H</dd></div>
       <div><dt>樣本</dt><dd id="rs-range">—</dd></div>
@@ -370,8 +396,8 @@
     <p class="note">
       10 檔之中有 7 檔的成本用的是 MT5 broker 過去 7 天、每天 48 個時段的真實歷史點差取樣（中位數）
       + 真實隔夜利息；帶 * 的 3 檔（GBPNZD、GBPCHF、NZDCHF）尚未實測，用 2.5 pips 保守估計值代入。
-      標的從 8 檔擴到 10 檔後，同時在場的部位變多，資金利用率跟著上升（平均動用資金
-      41% → 47%，峰值 128% → 133%），年化報酬與風險調整後指標都同步改善。
+      標的從 8 檔擴到 10 檔後，同時在場的部位變多，資金利用率跟著上升，
+      實際的平均／峰值動用資金見下方那一列。峰值超過 100% 代表這是保證金槓桿而非現金交易。
     </p>
     <div class="cap-row">
       <label for="cap-input">依你的實際本金換算：</label>
@@ -563,7 +589,7 @@
       <div class="block flag">
         <h3>兩個必須說清楚的數字</h3>
         <ul>
-          <li>組合的峰值動用資金達本金 <strong>121%</strong>，屬保證金槓桿而非現金交易（全部 15 檔版本是 221%）。</li>
+          <li>組合的峰值動用資金達本金 <strong id="flag-peak">—</strong>，屬保證金槓桿而非現金交易。</li>
           <li>手數落在 0.012~0.032 之間，需向下取整到經紀商的 0.01 lot step，
             造成約 5~15% 的部位偏差（$100,000 帳戶下降到 5% 以內）。回測未模擬這個取整誤差。</li>
         </ul>
@@ -586,6 +612,7 @@ const svgEl = (tag, attrs) => { const n = document.createElementNS("http://www.w
   for (const k in attrs) n.setAttribute(k, attrs[k]); return n; };
 
 document.getElementById("rs-range").textContent = DATA.meta.start + " → " + DATA.meta.end;
+document.getElementById("flag-peak").textContent = DATA.portfolio.peakDep + "%";
 document.getElementById("gen-at").textContent = DATA.meta.generated_at || "—";
 
 /* ---------------- hero tiles（依使用者輸入本金換算美金） ---------------- */

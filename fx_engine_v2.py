@@ -27,6 +27,15 @@ INITIAL_CAPITAL = 25000.0
 CONTRACT_SIZE = 100000.0          # 外匯標準手 = 100,000 基礎貨幣單位
 COMMISSION_PER_LOT_SIDE = 3.0     # 單邊佣金 $3/手（來回 $6）
 
+# broker 00:00（= 21:00 UTC）是換日結算、全日流動性最低的一小時，點差會擴到
+# 平常的十幾倍。實測 TradingView Pepperstone 的 1H 資料在這一根有系統性假跳空：
+# 開盤對前根收盤的跳空中位數是其他時段的 50~80 倍（AUDCHF 8.2 pips vs 0.1 pips，
+# GBPNZD 10.0 vs 0.2），最大到 254 pips。用那根的 high/low 觸發進出場會憑空
+# 生出實盤拿不到的止盈——實測有 80 筆止盈只有這根尖刺碰得到，佔全期淨利 6.7%，
+# 而且全是止盈、零停損（停損距離 4×ATR 太遠，尖刺只夠灌水不夠傷人）。
+# 因此重採樣成 4H 前先把這一根整個丟掉：00:00-04:00 那根改由 01/02/03 三根組成。
+EXCLUDE_ROLLOVER_HOUR = 0         # 設為 None 可關閉此過濾
+
 # 各貨幣對的 (基礎貨幣, 計價貨幣) —— G8 貨幣兩兩組合，共 28 檔 (major+minor+cross全覆蓋)
 PAIR_CCY = {
     # 7 檔 major
@@ -69,6 +78,8 @@ def load_4h(pair):
     df = pd.read_csv(os.path.join(DATA_DIR, f"{pair}_1h.csv"))
     df["datetime"] = pd.to_datetime(df["datetime"])
     df = df.set_index("datetime").sort_index()
+    if EXCLUDE_ROLLOVER_HOUR is not None:
+        df = df[df.index.hour != EXCLUDE_ROLLOVER_HOUR]
     out = (df.resample("4h", label="left", closed="left")
              .agg({"open": "first", "high": "max", "low": "min", "close": "last"})
              .dropna())
@@ -82,6 +93,12 @@ def add_indicators(bars):
                          np.maximum((d["high"] - pc).abs(), (d["low"] - pc).abs()))
     d["atr"] = d["tr"].rolling(20).mean()
     d["ema50"] = d["close"].ewm(span=50, adjust=False).mean()
+    # 一律往後推一根，讓「第 i 根的訊號」只用得到第 i-1 根收盤時就已知的資訊。
+    # 這是為了跟實盤 EA 對齊：EA 呼叫 CopyBuffer(handle, 0, 1, 1, buf)，shift=1
+    # 代表前一根「已收盤」的 K 棒，不會用到還在跑的當根。舊版直接用當根的
+    # EMA/ATR（含當根收盤價）去比對當根的 high/low，是輕微的未來函數。
+    d["atr"] = d["atr"].shift(1)
+    d["ema50"] = d["ema50"].shift(1)
     return d.dropna(subset=["atr", "ema50"])
 
 
