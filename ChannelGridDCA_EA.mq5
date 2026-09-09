@@ -6,7 +6,7 @@
 //|  資料來源：TradingView 的 Pepperstone 報價，已轉換成 MT5 broker 時間|
 //+------------------------------------------------------------------+
 #property copyright "Grid Strategy Project"
-#property version   "3.40"
+#property version   "3.50"
 #property description "通道均值回歸 DCA 網格：跌破 EMA50-2ATR 做多、突破 EMA50+2ATR 做空，"
 #property description "最多 4 層 DCA，止盈 min(EMA50, 均價+1ATR)，硬停損 均價-4ATR。"
 #property description "手數以帳戶幣別名目金額換算（正確處理交叉盤跨幣別），非固定手數。"
@@ -17,12 +17,13 @@
 #property description "v3.3：全28檔補實測點差，估計值歸零。"
 #property description "v3.4：拿掉 CADJPY（近期 JPY 趨勢性強，不利均值回歸），"
 #property description "加入 CADCHF、GBPCAD，共11檔，全數實測點差。"
+#property description "v3.5：加入 NZDCAD，共12檔。"
 
 #include <Trade/Trade.mqh>
 
 //--- 交易標的與資金
 input group "═══ 標的與資金 ═══"
-input string InpSymbols        = "AUDCAD,AUDCHF,GBPNZD,GBPCHF,EURCHF,NZDUSD,EURAUD,AUDUSD,NZDCHF,CADCHF,GBPCAD"; // 交易貨幣對（v3.4：拿掉CADJPY，近期JPY趨勢性強不利均值回歸；加入CADCHF、GBPCAD）
+input string InpSymbols        = "AUDCAD,AUDCHF,GBPNZD,GBPCHF,EURCHF,NZDUSD,EURAUD,AUDUSD,NZDCHF,CADCHF,GBPCAD,NZDCAD"; // 交易貨幣對（v3.5：加入NZDCAD，共12檔）
 input bool   InpSizeByEquity   = true;      // 部位大小依帳戶淨值百分比（false = 用固定美元金額）
 input double InpBaseOrderPct   = 6.0;       // 首單名目金額 = 淨值的百分之幾（6% ≈ $25,000 帳戶的 $1,500）
 input double InpBaseOrderUSD   = 1500.0;    // 首單名目金額（InpSizeByEquity=false 時使用）
@@ -44,7 +45,7 @@ input bool   InpAllowShort     = true;      // 允許做空
 //--- 風控與執行
 input group "═══ 風控與執行 ═══"
 input double InpMaxSpreadMult  = 3.0;       // 點差超過長期中位數的幾倍時禁止新開倉
-input string InpMedianSpreads  = "1.1,0.8,2.2,1.3,0.8,0.5,1.0,0.3,1.1,0.9,1.5"; // 各對點差中位數(pips)，順序須對應 InpSymbols（v3.4起28檔全部為實測值，無估計）
+input string InpMedianSpreads  = "1.1,0.8,2.2,1.3,0.8,0.5,1.0,0.3,1.1,0.9,1.5,1.2"; // 各對點差中位數(pips)，順序須對應 InpSymbols（v3.4起28檔全部為實測值，無估計）
 input double InpMaxTotalRiskPct= 60.0;      // 所有部位名目總和上限（占淨值百分比）；填 0 = 不設限，只靠 InpMaxLayers 限制單一商品
 input long   InpMagic          = 20260904;  // magic number
 input int    InpSlippagePoints = 20;        // 允許滑價（points）

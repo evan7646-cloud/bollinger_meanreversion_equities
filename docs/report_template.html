@@ -305,8 +305,8 @@
     <h1>交易清單貨幣對績效</h1>
     <p class="lede">
       從 G8 貨幣兩兩組合的<strong>全部 28 檔</strong>（major + minor + cross）中，取 Sharpe 值最高的一批，
-      再人工微調（見下方 v3.4 說明），目前共 <strong>11 檔</strong>，
-      各自以 $25,000 獨立本金回測，並模擬「單一帳戶同時交易這 11 檔」的共用資金池組合。成本含真實點差、佣金與隔夜利息，
+      再人工微調（見下方 v3.4／v3.5 說明），目前共 <strong>12 檔</strong>，
+      各自以 $25,000 獨立本金回測，並模擬「單一帳戶同時交易這 12 檔」的共用資金池組合。成本含真實點差、佣金與隔夜利息，
       止盈與 4 ATR 硬停損均按原始策略邏輯保留。
     </p>
     <p class="lede" style="margin-top:10px;">
@@ -345,6 +345,12 @@
       <strong>淘汰</strong>：AUDNZD（Sharpe −0.10，唯一負報酬且曲線是純雜訊）、
       USDCHF（平滑度僅 0.37）、GBPAUD（Sharpe 0.67 偏弱）、NZDCAD（掉出前 10）。
       <span style="opacity:.65">（此版本中 GBPNZD、GBPCHF、NZDCHF 三檔尚無實測點差，暫用 2.5 pips 估計值——已於 v3.3 補實測。）</span>
+    </div>
+    <div class="callout">
+      <strong>v3.5 加碼分散：再加入 NZDCAD（11 檔 → 12 檔）</strong>
+      NZDCAD 點差 1.2 pips 為實測值（非估計），Sharpe 1.20、Calmar 2.12，屬中段偏上的標的。
+      加入後組合年化 10.13% → 10.95%（+0.82pp），但 Calmar 5.43 → 5.33、MDD 1.87% → 2.06%——
+      跟 v3.4 同一種取捨：多一檔分散部位換來更高的絕對報酬，風險調整後績效小幅下降。
     </div>
     <div class="callout">
       <strong>v3.4 人工調整標的：拿掉 CADJPY，加入 CADCHF、GBPCAD（10 檔 → 11 檔）</strong>
@@ -414,9 +420,9 @@
 
   <section>
     <p class="eyebrow">組合結果</p>
-    <h2>單一 $25,000 帳戶同時交易 11 檔</h2>
+    <h2>單一 $25,000 帳戶同時交易 12 檔</h2>
     <p class="note">
-      11 檔<strong>全部</strong>使用 MT5 broker 過去 7 天、每天 48 個時段的真實歷史點差取樣（中位數）
+      12 檔<strong>全部</strong>使用 MT5 broker 過去 7 天、每天 48 個時段的真實歷史點差取樣（中位數）
       ＋真實隔夜利息，沒有任何估計值。
       標的數量調整後，同時在場的部位跟著變動，資金利用率也會改變，
       實際的平均／峰值動用資金見下方那一列。峰值超過 100% 代表這是保證金槓桿而非現金交易。

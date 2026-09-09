@@ -31,9 +31,10 @@ sys.path.insert(0, ROOT)
 
 # G8 全 28 檔掃描後、依 Sharpe 排序，人工微調後的清單（fx_28pairs_scan_results.csv）
 # v3.4：拿掉 CADJPY（近期 JPY 趨勢性強，不利均值回歸策略），
-# 加入 CADCHF、GBPCAD。28 檔全數使用 ExportForexRealCosts.mq5 實測點差，無估計值。
+# 加入 CADCHF、GBPCAD。v3.5：再加入 NZDCAD。28 檔全數使用
+# ExportForexRealCosts.mq5 實測點差，無估計值。
 TOP8 = ["AUDCAD", "AUDCHF", "GBPNZD", "GBPCHF", "EURCHF",
-        "NZDUSD", "EURAUD", "AUDUSD", "NZDCHF", "CADCHF", "GBPCAD"]
+        "NZDUSD", "EURAUD", "AUDUSD", "NZDCHF", "CADCHF", "GBPCAD", "NZDCAD"]
 DATA_DIR = os.path.join(ROOT, "data_fx_1h")
 DOCS_DIR = os.path.join(ROOT, "docs")
 
