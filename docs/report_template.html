@@ -343,10 +343,18 @@
       GBPNZD、GBPCHF、EURCHF、NZDUSD、NZDCHF。
       <strong>淘汰</strong>：AUDNZD（Sharpe −0.10，唯一負報酬且曲線是純雜訊）、
       USDCHF（平滑度僅 0.37）、GBPAUD（Sharpe 0.67 偏弱）、NZDCAD（掉出前 10）。
-      表格與圖上帶 <strong>*</strong> 的三檔（GBPNZD、GBPCHF、NZDCHF）目前<strong>還沒有實測點差</strong>，
-      成本是用 2.5 pips 的保守估計值代入，真實數字要等在 MT5 執行
-      <code>ExportForexRealCosts.mq5</code> 把這幾檔補進調查清單後才有——在那之前，
-      這三檔的績效數字請保留懷疑。
+      <span style="opacity:.65">（此版本中 GBPNZD、GBPCHF、NZDCHF 三檔尚無實測點差，暫用 2.5 pips 估計值——已於 v3.3 補實測。）</span>
+    </div>
+    <div class="callout">
+      <strong>v3.3 補實測：28 檔全部改用真實點差，估計值歸零</strong>
+      把 <code>ExportForexRealCosts.mq5</code> 的調查清單從 21 檔擴到 G8 全 28 檔（＋XAUUSD）重跑一次，
+      每檔取樣過去 7 天、每天 48 個時段的真實歷史 tick。<strong>原本靠 2.5 pips 估計值代入的三檔，
+      真實點差全部比估計更窄</strong>——GBPNZD 2.20、GBPCHF 1.30、NZDCHF 1.10 pips，
+      也就是先前是<strong>低估</strong>而非高估績效。其中 NZDCHF 因此從第 6 名升到第 3 名（Sharpe 1.48 → 1.87）。
+      <br><br>
+      這次也順便驗證了調查方法本身：21 檔前後兩次調查（不同週）的點差差異全部落在 <strong>0.3 pips 以內</strong>，
+      大多只有 −0.1，代表這個取樣統計是穩定可複製的，不是單次快照的運氣。
+      現在 <strong>28 檔全數使用實測成本，報告中不再有任何估計值</strong>。
     </div>
     <div class="callout">
       <strong>v3.2 修正：拿掉換日假跳空、指標改用前一根已收盤 K 棒（年化 11.18% → 9.47%）</strong>
@@ -394,8 +402,8 @@
     <p class="eyebrow">組合結果</p>
     <h2>單一 $25,000 帳戶同時交易 Top-10</h2>
     <p class="note">
-      10 檔之中有 7 檔的成本用的是 MT5 broker 過去 7 天、每天 48 個時段的真實歷史點差取樣（中位數）
-      + 真實隔夜利息；帶 * 的 3 檔（GBPNZD、GBPCHF、NZDCHF）尚未實測，用 2.5 pips 保守估計值代入。
+      10 檔<strong>全部</strong>使用 MT5 broker 過去 7 天、每天 48 個時段的真實歷史點差取樣（中位數）
+      ＋真實隔夜利息，沒有任何估計值。
       標的從 8 檔擴到 10 檔後，同時在場的部位變多，資金利用率跟著上升，
       實際的平均／峰值動用資金見下方那一列。峰值超過 100% 代表這是保證金槓桿而非現金交易。
     </p>

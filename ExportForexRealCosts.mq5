@@ -13,7 +13,7 @@
 // v3 改用 CopyTicksRange() 向broker伺服器抓「過去N天、每天多個時間點」的真實歷史 tick 報價，
 // 對每個時間點各取樣一次 Bid/Ask，最後統計出 mean/median/min/max，才是真正「考慮實際點差」的做法。
 
-input string InpSymbols       = "EURUSD,USDJPY,GBPUSD,AUDUSD,USDCAD,USDCHF,NZDUSD,EURGBP,EURJPY,GBPJPY,AUDNZD,EURCHF,CADJPY,EURAUD,GBPAUD,AUDCAD,NZDCAD,CHFJPY,XAUUSD,AUDCHF,EURCAD"; // 目標貨幣對清單（逗號分隔）
+input string InpSymbols       = "EURUSD,GBPUSD,USDJPY,USDCHF,USDCAD,AUDUSD,NZDUSD,EURGBP,EURJPY,EURCHF,EURCAD,EURAUD,EURNZD,GBPJPY,GBPCHF,GBPCAD,GBPAUD,GBPNZD,CHFJPY,CADJPY,AUDJPY,NZDJPY,CADCHF,AUDCHF,NZDCHF,AUDCAD,NZDCAD,AUDNZD,XAUUSD"; // 目標貨幣對清單（逗號分隔）— G8全28檔(major+minor+cross)+黃金，對應 fx_engine_v2.ALL_28_PAIRS
 input int    InpDays          = 7;      // 往回調查幾天（建議 >=7 天以涵蓋一整週各時段）
 input int    InpSamplesPerDay = 48;     // 每天取樣次數（預設每 30 分鐘一次）
 input int    InpWindowSeconds = 5;      // 每次取樣往後抓幾秒內的 tick（在該窗口內取最後一筆雙邊報價）
