@@ -163,6 +163,7 @@ def build_payload(perf, curves, port, port_curve, trades_df, open_positions):
         portfolio=dict(ann=round(port["ann_return_pct"], 2), mdd=round(port["max_dd_pct"], 2),
                        mddClose=round(port["max_dd_close_pct"], 2),
                        currentDd=round(port["current_dd_pct"], 2),
+                       currentFloat=round(port["current_float_pct"], 2),
                        sharpe=round(port["sharpe"], 2), calmar=round(port["calmar"], 2),
                        total=round(port["total_return_pct"], 2), win=round(port["win_rate"], 1),
                        trades=int(port["n_trades"]), avgDep=round(port["avg_deployed_pct"], 1),

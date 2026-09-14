@@ -102,7 +102,7 @@
   .note { color: var(--ink-2); margin: 0 0 20px; max-width: 68ch; font-size: 13.5px; }
 
   /* ---------- hero metrics ---------- */
-  .tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; background: var(--rule);
+  .tiles { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; background: var(--rule);
            border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; }
   .tile { background: var(--surface); padding: 18px 20px 16px; }
   .tile .lab { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
@@ -439,9 +439,15 @@
     <h2>單一 $25,000 帳戶同時交易 12 檔</h2>
     <p class="note">
       12 檔<strong>全部</strong>使用 MT5 broker 過去 7 天、每天 48 個時段的真實歷史點差取樣（中位數）
-      ＋真實隔夜利息，沒有任何估計值。
-      標的數量調整後，同時在場的部位跟著變動，資金利用率也會改變，
-      實際的平均／峰值動用資金見下方那一列。峰值超過 100% 代表這是保證金槓桿而非現金交易。
+      ＋真實隔夜利息，沒有任何估計值。標的數量調整後，同時在場的部位跟著變動，資金利用率也會改變，
+      實際的平均／峰值動用資金見下方那一列；峰值超過 100% 代表這是保證金槓桿而非現金交易。
+      <br><br>
+      <strong>「目前回撤」與「目前浮動損益」不是同一件事</strong>，這個策略特別容易搞混：
+      回撤量的是<strong>比權益歷史高點低多少</strong>，浮動損益量的是<strong>未平倉部位現在浮虧多少</strong>。
+      因為這個策略有 89% 的時間都掛著浮虧在跑（平均約本金的 1.4%），
+      <strong>權益高點那一刻本身就已經含著浮虧</strong>——所以回撤永遠小於浮虧，
+      差額就是高點當時的浮虧深度。拿回撤去估風險會低估；
+      FTMO 之類的資金計畫看的是含浮虧的<strong>權益</strong>，該盯的是浮動損益那一格。
     </p>
     <div class="cap-row">
       <label for="cap-input">依你的實際本金換算：</label>
@@ -688,6 +694,12 @@ function renderTiles(capital) {
       lab: "目前回撤", val: pct(P.currentDd), sub: "截至 " + (DATA.meta.generated_at || "—"),
       loss: P.currentDd > 0.05, live: true,
       usdVal: P.currentDd > 0.001 ? "−" + usd(capital * P.currentDd / 100) : usd(0),
+    },
+    {
+      lab: "目前浮動損益", val: pct(Math.abs(P.currentFloat)),
+      sub: "未平倉部位帳面浮虧（≠回撤，見下方說明）",
+      loss: P.currentFloat < 0, live: true,
+      usdVal: (P.currentFloat < 0 ? "−" : "") + usd(Math.abs(capital * P.currentFloat / 100)),
     },
     { lab: "Sharpe", val: fmt(P.sharpe), sub: "以 4H 報酬年化" },
     { lab: "Calmar", val: fmt(P.calmar), sub: "年化報酬 ÷ 最大回撤" },

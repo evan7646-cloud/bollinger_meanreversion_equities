@@ -45,6 +45,7 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None):
     # 盤中最不利價計價（多單用 low、空單用 high）——收盤價計價會低估浮虧，
     # 這條是保守上界（假設所有部位同一瞬間都摸到各自最差點），真實落在兩者之間。
     equity_adv = np.empty(len(idx))
+    floating = np.empty(len(idx))
     deployed = np.empty(len(idx))
     trades, all_lots = [], []
 
@@ -126,6 +127,10 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None):
                 dep += st["qty"] * st["rb"][j]
         equity[gi] = cash + mtm
         equity_adv[gi] = cash + mtm_adv
+        # 未平倉部位的浮動損益（權益 − 現金）。這跟「目前回撤」是兩回事：
+        # 回撤量的是「比權益高點低多少」，而權益高點本身通常也掛著浮虧，
+        # 所以回撤永遠小於浮虧，差額就是高點當時的浮虧深度。
+        floating[gi] = mtm
         deployed[gi] = dep
 
     eq = pd.Series(equity, index=pd.DatetimeIndex(idx))
@@ -134,6 +139,7 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None):
     cur_dd = abs((eq.iloc[-1] - peak.iloc[-1]) / peak.iloc[-1]) * 100.0
     eq_adv = pd.Series(equity_adv, index=pd.DatetimeIndex(idx))
     mdd = abs(((eq_adv - peak) / peak).min()) * 100.0
+    cur_float_pct = floating[-1] / capital * 100.0
     years = (idx[-1] - idx[0]).total_seconds() / 86400.0 / 365.25
     rets = eq.pct_change().dropna()
     sharpe = rets.mean() / rets.std() * np.sqrt(len(eq) / years) if rets.std() > 0 else 0.0
@@ -142,7 +148,7 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None):
     wins = [x for x in pnls if x > 0]
 
     return dict(total_return_pct=total, ann_return_pct=ann, max_dd_pct=mdd,
-                max_dd_close_pct=mdd_close,
+                max_dd_close_pct=mdd_close, current_float_pct=cur_float_pct,
                 current_dd_pct=cur_dd, sharpe=sharpe,
                 calmar=ann / mdd if mdd > 0.01 else np.nan,
                 win_rate=len(wins) / len(pnls) * 100.0 if pnls else 0.0, n_trades=len(pnls),
