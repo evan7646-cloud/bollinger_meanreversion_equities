@@ -347,6 +347,22 @@
       <span style="opacity:.65">（此版本中 GBPNZD、GBPCHF、NZDCHF 三檔尚無實測點差，暫用 2.5 pips 估計值——已於 v3.3 補實測。）</span>
     </div>
     <div class="callout">
+      <strong>v3.6 誠實化回撤：改用盤中計價（MDD 2.06% → 2.87%）</strong>
+      舊版的權益曲線是用<strong>每根 4H K棒的收盤價</strong>計算未平倉部位的浮動損益。問題是
+      K 棒收盤前的浮虧往往深得多，而<strong>那才是你盯盤時真正看到的數字</strong>。現在改成
+      用盤中最不利價計價（多單取 low、空單取 high），最大回撤從 2.06% 變成
+      <strong>2.87%</strong>，Calmar 也從 5.25 降到 3.76。策略本身完全沒變，變的只是
+      「用什麼價格去承認浮虧」。表格裡仍保留收盤計價那一欄供對照。
+      <br><br>
+      要補一句：盤中計價是<strong>保守上界</strong>——它假設所有部位在同一瞬間都摸到各自最差點，
+      實務上不太可能同時發生。真實體感落在 2.06% 與 2.87% 之間，但寧可用難看的那個數字規劃資金。
+      <br><br>
+      同時揭露一個結構性事實：<strong><code>InpMaxLayers=4</code> 實際上等於 3</strong>。
+      第 4 層的觸發距離是 4.5×ATR，而硬停損在 4.0×ATR——停損永遠先到，第 4 層加不到。
+      全期 2,118 筆交易裡<strong>一筆 4 層的都沒有</strong>，證實了這點。實測砍成「最多 2 層」
+      反而更差（年化 9.39%、MDD 2.21%），所以維持現狀不動。
+    </div>
+    <div class="callout">
       <strong>v3.5 加碼分散：再加入 NZDCAD（11 檔 → 12 檔）</strong>
       NZDCAD 點差 1.2 pips 為實測值（非估計），Sharpe 1.20、Calmar 2.12，屬中段偏上的標的。
       加入後組合年化 10.13% → 10.95%（+0.82pp），但 Calmar 5.43 → 5.33、MDD 1.87% → 2.06%——
@@ -666,7 +682,7 @@ function renderTiles(capital) {
   const tileDefs = [
     { lab: "年化報酬", val: pct(P.ann), sub: "總報酬 " + pct(P.total) + " ／ " + P.years + " 年",
       usdVal: usd(capital * P.ann / 100) + " ／年" },
-    { lab: "最大回撤", val: pct(P.mdd), sub: "歷史最深回撤（樣本內）", loss: true,
+    { lab: "最大回撤", val: pct(P.mdd), sub: "盤中計價（收盤計價僅 " + pct(P.mddClose) + "）", loss: true,
       usdVal: "−" + usd(capital * P.mdd / 100) },
     {
       lab: "目前回撤", val: pct(P.currentDd), sub: "截至 " + (DATA.meta.generated_at || "—"),
@@ -750,7 +766,7 @@ function renderMoney(capital) {
     ["年化波動度（Sharpe 反推）", pct(vol) + " ≈ " + usd(capital * vol / 100), ""],
     ["68% 信心區間（±1σ）", usd(capital * (P.ann - vol) / 100) + " ~ " + usd(capital * (P.ann + vol) / 100), ""],
     ["95% 信心區間（±2σ）", usd(capital * (P.ann - 2 * vol) / 100) + " ~ " + usd(capital * (P.ann + 2 * vol) / 100), ""],
-    ["歷史最深回撤（帳面浮虧）", "−" + usd(capital * P.mdd / 100), "warn"],
+    ["歷史最深回撤（盤中帳面浮虧）", "−" + usd(capital * P.mdd / 100), "warn"],
     ["峰值需要的保證金曝險", usd(capital * P.peakDep / 100), ""],
     ["首單名目金額（淨值 6%）", usd(capital * 0.06), ""],
     ["首單手數（中位／滿倉）", (P.lots * scale).toFixed(3) + " ／ " + (P.maxlots * scale).toFixed(3) + " 手", ""],
@@ -865,6 +881,7 @@ const COLS = [
   { k: "name", t: "貨幣對", cls: "left", f: v => v },
   { k: "ann", t: "年化報酬", f: v => pct(v) },
   { k: "mdd", t: "最大回撤", f: v => pct(v) },
+  { k: "mddClose", t: "回撤(收盤計價)", f: v => pct(v) },
   { k: "sharpe", t: "Sharpe", f: v => fmt(v) },
   { k: "calmar", t: "Calmar", f: v => fmt(v), bar: true },
   { k: "total", t: "總報酬", f: v => pct(v) },
@@ -924,7 +941,8 @@ render();
 const avg = k => DATA.pairs.reduce((s, p) => s + p[k], 0) / DATA.pairs.length;
 const foot = document.getElementById("perf-foot");
 const ftr = el("tr");
-const fvals = [DATA.meta.n + " 檔平均", pct(avg("ann")), pct(avg("mdd")), fmt(avg("sharpe")), fmt(avg("calmar")),
+const fvals = [DATA.meta.n + " 檔平均", pct(avg("ann")), pct(avg("mdd")), pct(avg("mddClose")),
+  fmt(avg("sharpe")), fmt(avg("calmar")),
   pct(avg("total")), avg("win").toFixed(1) + "%", fmt(avg("pf")), Math.round(avg("trades")),
   Math.round(avg("sl")), "—", avg("lots").toFixed(3), avg("maxlots").toFixed(3)];
 fvals.forEach((v, i) => ftr.append(el("td", i === 0 ? "left" : "", v)));

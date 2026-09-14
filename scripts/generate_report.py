@@ -89,7 +89,8 @@ def run_backtest():
         r = run_engine_v2(bars, p, costs_all[p], rates)
         curves[p] = (r["equity"] / INITIAL_CAPITAL - 1.0) * 100.0
         perf_rows.append(dict(
-            貨幣對=p, 年化報酬=r["ann_return_pct"], MDD=r["max_dd_pct"], Sharpe=r["sharpe"],
+            貨幣對=p, 年化報酬=r["ann_return_pct"], MDD=r["max_dd_pct"],
+            MDD收盤=r["max_dd_close_pct"], Sharpe=r["sharpe"],
             Calmar=r["calmar"], 總報酬=r["total_return_pct"], 勝率=r["win_rate"],
             獲利因子=r["profit_factor"], 交易數=r["n_trades"], 止盈=r["n_tp"], 停損=r["n_sl"],
             中位手數=r["median_lots"], 最大手數=r["max_lots"], 回測年數=r["years"],
@@ -120,6 +121,7 @@ def build_payload(perf, curves, port, port_curve, trades_df, open_positions):
         series = [None if pd.isna(v) else round(float(v), 3) for v in aligned[p]]
         pairs_json.append(dict(
             name=p, ann=round(row["年化報酬"], 3), mdd=round(row["MDD"], 3),
+            mddClose=round(row["MDD收盤"], 3),
             sharpe=round(row["Sharpe"], 3), calmar=round(row["Calmar"], 3),
             total=round(row["總報酬"], 3), win=round(row["勝率"], 2), pf=round(row["獲利因子"], 3),
             trades=int(row["交易數"]), tp=int(row["止盈"]), sl=int(row["停損"]),
@@ -159,6 +161,7 @@ def build_payload(perf, curves, port, port_curve, trades_df, open_positions):
     payload = dict(
         pairs=pairs_json,
         portfolio=dict(ann=round(port["ann_return_pct"], 2), mdd=round(port["max_dd_pct"], 2),
+                       mddClose=round(port["max_dd_close_pct"], 2),
                        currentDd=round(port["current_dd_pct"], 2),
                        sharpe=round(port["sharpe"], 2), calmar=round(port["calmar"], 2),
                        total=round(port["total_return_pct"], 2), win=round(port["win_rate"], 1),

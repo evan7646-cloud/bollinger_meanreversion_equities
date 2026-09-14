@@ -158,6 +158,11 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
     last_date = None
 
     equity = np.empty(len(bars))
+    # 同一根K棒的「盤中最不利價」計價：多單用 low、空單用 high。
+    # 收盤價計價會低估回撤——K棒收盤前浮虧可能深得多，而那才是盯盤時真正看到的數字。
+    # 反過來說這條曲線是保守上界（假設所有部位在同一瞬間都摸到各自最差點），
+    # 真實體感落在兩者之間。
+    equity_adv = np.empty(len(bars))
     trades = []
     trade_log = []       # 每筆完整進出場明細
     lots_log = []
@@ -275,10 +280,13 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
         # 權益 = 現金 + 未實現損益（已換算為美元）
         if side > 0:
             equity[i] = cash + qty * (c - avg_entry) * rq
+            equity_adv[i] = cash + qty * (l - avg_entry) * rq
         elif side < 0:
             equity[i] = cash + qty * (avg_entry - c) * rq
+            equity_adv[i] = cash + qty * (avg_entry - h) * rq
         else:
             equity[i] = cash
+            equity_adv[i] = cash
 
     # 回測結束當下若還持有部位（尚未等到止盈/停損），記錄下來給「目前持倉」區塊用
     open_position = None
@@ -297,8 +305,12 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
     cap = initial_capital * capital_scale
     total_ret = (eq.iloc[-1] - cap) / cap * 100.0
     peak = eq.cummax()
-    mdd = abs(((eq - peak) / peak).min()) * 100.0
+    mdd_close = abs(((eq - peak) / peak).min()) * 100.0
     cur_dd = abs((eq.iloc[-1] - peak.iloc[-1]) / peak.iloc[-1]) * 100.0
+    # 盤中計價的回撤：峰值仍用收盤價曲線（那是真正「帳面最高點」），
+    # 但谷底用盤中最不利價，才反映實際看到的最深浮虧。
+    eq_adv = pd.Series(equity_adv, index=idx)
+    mdd = abs(((eq_adv - peak) / peak).min()) * 100.0
     years = (idx[-1] - idx[0]).total_seconds() / 86400.0 / 365.25
     rets = eq.pct_change().dropna()
     sharpe = rets.mean() / rets.std() * np.sqrt(n / years) if rets.std() > 0 else 0.0
@@ -309,6 +321,7 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
 
     return dict(
         pair=pair, total_return_pct=total_ret, ann_return_pct=ann, max_dd_pct=mdd,
+        max_dd_close_pct=mdd_close,
         current_dd_pct=cur_dd, sharpe=sharpe, calmar=ann / mdd if mdd > 0.01 else np.nan,
         win_rate=len(wins) / len(pnls) * 100.0 if pnls else 0.0,
         n_trades=len(pnls), n_tp=sum(1 for k, _ in trades if k == "TP"),

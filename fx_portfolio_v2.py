@@ -42,6 +42,9 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None):
 
     cash = capital
     equity = np.empty(len(idx))
+    # 盤中最不利價計價（多單用 low、空單用 high）——收盤價計價會低估浮虧，
+    # 這條是保守上界（假設所有部位同一瞬間都摸到各自最差點），真實落在兩者之間。
+    equity_adv = np.empty(len(idx))
     deployed = np.empty(len(idx))
     trades, all_lots = [], []
 
@@ -112,20 +115,25 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None):
                 if closed:
                     st.update(side=0, qty=0.0, layer=0, avg=0.0)
 
-        mtm, dep = 0.0, 0.0
+        mtm, dep, mtm_adv = 0.0, 0.0, 0.0
         for p in pairs:
             st = books[p]
             if st["side"] != 0:
                 j = st["last_j"]
                 mtm += st["qty"] * (st["close"][j] - st["avg"]) * st["rq"][j] * st["side"]
+                adv_px = st["low"][j] if st["side"] > 0 else st["high"][j]
+                mtm_adv += st["qty"] * (adv_px - st["avg"]) * st["rq"][j] * st["side"]
                 dep += st["qty"] * st["rb"][j]
         equity[gi] = cash + mtm
+        equity_adv[gi] = cash + mtm_adv
         deployed[gi] = dep
 
     eq = pd.Series(equity, index=pd.DatetimeIndex(idx))
     total = (eq.iloc[-1] - capital) / capital * 100.0
-    peak = eq.cummax(); mdd = abs(((eq - peak) / peak).min()) * 100.0
+    peak = eq.cummax(); mdd_close = abs(((eq - peak) / peak).min()) * 100.0
     cur_dd = abs((eq.iloc[-1] - peak.iloc[-1]) / peak.iloc[-1]) * 100.0
+    eq_adv = pd.Series(equity_adv, index=pd.DatetimeIndex(idx))
+    mdd = abs(((eq_adv - peak) / peak).min()) * 100.0
     years = (idx[-1] - idx[0]).total_seconds() / 86400.0 / 365.25
     rets = eq.pct_change().dropna()
     sharpe = rets.mean() / rets.std() * np.sqrt(len(eq) / years) if rets.std() > 0 else 0.0
@@ -134,13 +142,14 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None):
     wins = [x for x in pnls if x > 0]
 
     return dict(total_return_pct=total, ann_return_pct=ann, max_dd_pct=mdd,
+                max_dd_close_pct=mdd_close,
                 current_dd_pct=cur_dd, sharpe=sharpe,
                 calmar=ann / mdd if mdd > 0.01 else np.nan,
                 win_rate=len(wins) / len(pnls) * 100.0 if pnls else 0.0, n_trades=len(pnls),
                 avg_deployed_pct=deployed.mean() / capital * 100.0,
                 peak_deployed_pct=deployed.max() / capital * 100.0,
                 median_lots=float(np.median(all_lots)), max_lots=float(np.max(all_lots)),
-                years=years, equity=eq)
+                years=years, equity=eq, equity_adv=eq_adv)
 
 
 if __name__ == "__main__":
