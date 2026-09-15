@@ -39,6 +39,7 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None,
             close=d["close"].to_numpy(float), atr=d["atr"].to_numpy(float),
             ema=d["ema50"].to_numpy(float),
             adx=(d["adx"].to_numpy(float) if "adx" in d else np.zeros(len(d))),
+            di_up=(d["di_up"].to_numpy(float) if "di_up" in d else np.ones(len(d))),
             rb=rb.to_numpy(float), rq=rq.to_numpy(float),
             # 波動度目標化縮放（見 fx_engine_v2.CFG["vol_target"] 的說明）
             vs=((d["atr"].rolling(500, min_periods=100).median() / d["atr"])
@@ -53,6 +54,14 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None,
         for j, gi in enumerate(books[p]["rows"]):
             sched[gi].append((p, j))
 
+    # 回撤熔斷：權益距離歷史高點超過 halt_dd% 時停止新開倉（既有部位仍照常管理），
+    # 等回撤收斂到 resume_dd% 以內才恢復。針對的是「區間被打破、策略連續接刀」的情境，
+    # 例如 2024-07 日圓套利平倉：ADX 過濾抓得到趨勢，但抓不到趨勢「急轉」。
+    halt_dd = cfg.get("halt_dd_pct")
+    resume_dd = cfg.get("resume_dd_pct", 0.0)
+    halted = False
+    run_peak = capital
+
     cash = capital
     equity = np.empty(len(idx))
     # 盤中最不利價計價（多單用 low、空單用 high）——收盤價計價會低估浮虧，
@@ -63,6 +72,13 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None,
     trades, all_lots = [], []
 
     for gi in range(len(idx)):
+        if halt_dd and gi > 0:
+            cur_dd = (run_peak - equity[gi - 1]) / run_peak * 100.0
+            if not halted and cur_dd >= halt_dd:
+                halted = True
+            elif halted and cur_dd <= resume_dd:
+                halted = False
+
         for p, j in sched[gi]:
             st = books[p]
             st["last_j"] = j
@@ -70,7 +86,15 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None,
             atr, ema = st["atr"][j], st["ema"][j]
             # ADX 趨勢強度過濾（見 fx_engine_v2.CFG["adx_max"]）
             _am = cfg.get("adx_max")
-            adx_ok = True if not _am else (st["adx"][j] <= _am or not np.isfinite(st["adx"][j]))
+            _hot = bool(_am) and np.isfinite(st["adx"][j]) and st["adx"][j] > _am
+            if not _hot:
+                long_ok = short_ok = True
+            elif cfg.get("adx_directional", False):
+                # 只擋逆勢那一邊（上升趨勢放行做多、下降趨勢放行做空）
+                long_ok  = (st["di_up"][j] >= 0.5)
+                short_ok = (st["di_up"][j] < 0.5)
+            else:
+                long_ok = short_ok = False
             rb, rq = st["rb"][j], st["rq"][j]
             cs = st["costs"]
             hs = cs["spread_pips"] * cs["pip_size"] / 2.0
@@ -85,11 +109,11 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None,
 
             if st["side"] == 0:
                 trig = None
-                if not adx_ok:
-                    pass
-                elif l <= lower:
+                if halted:
+                    trig = None
+                elif l <= lower and long_ok:
                     trig, px, sd = 1, min(c, lower) + hs, 1
-                elif h >= upper:
+                elif h >= upper and short_ok:
                     trig, px, sd = -1, max(c, upper) - hs, -1
                 if trig:
                     bo = base_order * st["vs"][j]
@@ -118,7 +142,8 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None,
                         comm = (st["qty"] / CONTRACT_SIZE) * COMMISSION_PER_LOT_SIDE
                         cash += pnl - comm; trades.append((kind, pnl - comm, p)); closed = True
 
-                dca_allowed = adx_ok or not cfg.get("adx_block_dca", True)
+                _side_ok = long_ok if sd > 0 else short_ok
+                dca_allowed = _side_ok or not cfg.get("adx_block_dca", True)
                 if not closed and st["layer"] < cfg["max_layers"] and dca_allowed:
                     step = st["layer"] * cfg["dca_step"] * atr
                     hit = (sd > 0 and l <= st["avg"] - step) or (sd < 0 and h >= st["avg"] + step)
@@ -147,6 +172,7 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None,
                 mtm_adv += st["qty"] * (adv_px - st["avg"]) * st["rq"][j] * st["side"]
                 dep += st["qty"] * st["rb"][j]
         equity[gi] = cash + mtm
+        if equity[gi] > run_peak: run_peak = equity[gi]
         equity_adv[gi] = cash + mtm_adv
         # 未平倉部位的浮動損益（權益 − 現金）。這跟「目前回撤」是兩回事：
         # 回撤量的是「比權益高點低多少」，而權益高點本身通常也掛著浮虧，

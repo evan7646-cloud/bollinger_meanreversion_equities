@@ -101,6 +101,11 @@ CFG = dict(
     # adx_block_dca=True 時連加碼一起擋（加碼才是趨勢盤裡真正致命的部分）。
     adx_max=None,
     adx_block_dca=True,
+    # adx_directional=True 時，ADX 超標只擋「逆勢方向」而非兩邊都擋：
+    # 強下跌趨勢中買回檔（接刀）才是殺手，賣反彈其實是順勢的。
+    # 2024-07 日圓套利平倉就是這種情形——ADX 平均 33.6、37% 時間 >38，
+    # 但 ATR 完全正常（0.98倍），純趨勢事件。
+    adx_directional=False,
 )
 
 
@@ -136,7 +141,7 @@ def _adx(d, period=14):
     pdi = 100 * pd.Series(plus_dm, index=d.index).ewm(alpha=a, adjust=False).mean() / atr_w
     mdi = 100 * pd.Series(minus_dm, index=d.index).ewm(alpha=a, adjust=False).mean() / atr_w
     dx = 100 * (pdi - mdi).abs() / (pdi + mdi).replace(0, np.nan)
-    return dx.ewm(alpha=a, adjust=False).mean()
+    return dx.ewm(alpha=a, adjust=False).mean(), pdi, mdi
 
 
 def add_indicators(bars):
@@ -150,7 +155,10 @@ def add_indicators(bars):
     # 這是為了跟實盤 EA 對齊：EA 呼叫 CopyBuffer(handle, 0, 1, 1, buf)，shift=1
     # 代表前一根「已收盤」的 K 棒，不會用到還在跑的當根。舊版直接用當根的
     # EMA/ATR（含當根收盤價）去比對當根的 high/low，是輕微的未來函數。
-    d["adx"] = _adx(d).shift(1)          # 跟 EMA/ATR 一樣只用前一根已收盤的值
+    _ad, _pdi, _mdi = _adx(d)
+    d["adx"] = _ad.shift(1)              # 跟 EMA/ATR 一樣只用前一根已收盤的值
+    # 趨勢方向：+DI > -DI 為上升、反之為下降。用來做「只擋逆勢那一邊」。
+    d["di_up"] = (_pdi > _mdi).shift(1).astype(float)
     d["atr"] = d["atr"].shift(1)
     d["ema50"] = d["ema50"].shift(1)
     return d.dropna(subset=["atr", "ema50"])
@@ -216,6 +224,8 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
              else np.zeros(len(bars)))
     adx_max = cfg.get("adx_max")
     adx_block_dca = cfg.get("adx_block_dca", True)
+    adx_dir = cfg.get("adx_directional", False)
+    di_up_a = (bars["di_up"].to_numpy(float) if "di_up" in bars else np.ones(len(bars)))
     dates = idx.date
     weekdays = idx.weekday
 
@@ -276,12 +286,21 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
             return q, comm, lots
 
         # ADX 過濾：趨勢太強時不開新倉（可選擇是否連加碼一起擋）
-        adx_ok = True if not adx_max else (adx_a[i] <= adx_max or not np.isfinite(adx_a[i]))
+        hot = bool(adx_max) and np.isfinite(adx_a[i]) and adx_a[i] > adx_max
+        if not hot:
+            long_ok = short_ok = True
+        elif adx_dir:
+            # 只擋逆勢那一邊：
+            #   上升趨勢（di_up=1）→ 做多是順勢放行、做空是逆勢擋掉
+            #   下降趨勢（di_up=0）→ 做空是順勢放行、做多是接刀擋掉
+            long_ok  = (di_up_a[i] >= 0.5)
+            short_ok = (di_up_a[i] < 0.5)
+        else:
+            long_ok = short_ok = False
+        adx_ok = long_ok or short_ok
 
         if side == 0:
-            if not adx_ok:
-                pass
-            elif l <= lower:
+            if l <= lower and long_ok:
                 px = min(c, lower) + half_spread
                 q, comm, lots = open_leg(base_order * vs[i], px, 1)
                 notional_usd = q * rb
@@ -291,7 +310,7 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
                     invested_usd = notional_usd
                     lots_log.append(lots)
                     entry_time, entry_l1_price, entry_i = idx[i], px, i
-            elif h >= upper and adx_ok:
+            elif h >= upper and short_ok:
                 px = max(c, upper) - half_spread
                 q, comm, lots = open_leg(base_order * vs[i], px, -1)
                 notional_usd = q * rb
@@ -344,7 +363,9 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
 
             if not closed and layer < cfg["max_layers"]:
                 step = layer * cfg["dca_step"] * atr
-                dca_allowed = adx_ok or not adx_block_dca
+                # 加碼的方向就是既有部位的方向，所以看那一邊能不能動
+                _side_ok = long_ok if side > 0 else short_ok
+                dca_allowed = _side_ok or not adx_block_dca
                 if side > 0 and l <= avg_entry - step and dca_allowed:
                     px = (avg_entry - step) + half_spread
                     q, comm, lots = open_leg(dca_order * vs[i], px, 1)

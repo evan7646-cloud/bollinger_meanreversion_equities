@@ -73,10 +73,25 @@ def refresh_price_data():
                 print(f"  ⚠️ {pair}: 抓取失敗（{e}）且無舊資料，可能影響回測")
 
 
+# 回測必須跟實盤 EA 用同一組參數，否則網頁顯示的數字不是 EA 實際在做的事。
+# 引擎的 CFG 預設把 ADX 過濾關著（研究用的中性起點），但 EA v3.7 起預設啟用，
+# 所以這裡明確覆寫，跟 ChannelGridDCA_EA.mq5 的 InpAdxMax / InpAdxBlockDca 對齊。
+def live_cfg():
+    import copy
+    from fx_engine_v2 import CFG
+    c = copy.deepcopy(CFG)
+    c["adx_max"] = 38.0          # ← 對應 EA 的 InpAdxMax
+    c["adx_block_dca"] = True    # ← 對應 EA 的 InpAdxBlockDca
+    c["adx_directional"] = False # EA 沒有這個選項；研究後否決，見第 2.14 節
+    return c
+
+
 def run_backtest():
     from fx_engine_v2 import (load_4h, add_indicators, build_usd_rates, run_engine_v2,
                               load_costs_all_pairs, PAIR_CCY, CFG, INITIAL_CAPITAL)
     from fx_portfolio_v2 import run_portfolio_v2
+
+    cfg = live_cfg()
 
     need = set()
     for p in TOP8:
@@ -88,7 +103,7 @@ def run_backtest():
     perf_rows, curves, all_trades, open_positions = [], {}, [], []
     for p in TOP8:
         bars = add_indicators(load_4h(p))
-        r = run_engine_v2(bars, p, costs_all[p], rates)
+        r = run_engine_v2(bars, p, costs_all[p], rates, cfg=cfg)
         curves[p] = (r["equity"] / INITIAL_CAPITAL - 1.0) * 100.0
         perf_rows.append(dict(
             貨幣對=p, 年化報酬=r["ann_return_pct"], MDD=r["max_dd_pct"],
@@ -103,7 +118,7 @@ def run_backtest():
             open_positions.append(r["open_position"])
 
     perf = pd.DataFrame(perf_rows).sort_values("Sharpe", ascending=False).reset_index(drop=True)
-    port = run_portfolio_v2(TOP8)
+    port = run_portfolio_v2(TOP8, cfg=cfg)
     port_curve = (port["equity"] / INITIAL_CAPITAL - 1.0) * 100.0
 
     trades_df = pd.DataFrame(all_trades).sort_values("exit_time", ascending=False).reset_index(drop=True)
