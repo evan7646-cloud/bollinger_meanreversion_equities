@@ -118,11 +118,27 @@ def load_4h(pair):
     df = pd.read_csv(os.path.join(DATA_DIR, f"{pair}_1h.csv"))
     df["datetime"] = pd.to_datetime(df["datetime"])
     df = df.set_index("datetime").sort_index()
-    if EXCLUDE_ROLLOVER_HOUR is not None:
-        df = df[df.index.hour != EXCLUDE_ROLLOVER_HOUR]
-    out = (df.resample("4h", label="left", closed="left")
-             .agg({"open": "first", "high": "max", "low": "min", "close": "last"})
-             .dropna())
+
+    def rs(x):
+        return (x.resample("4h", label="left", closed="left")
+                 .agg({"open": "first", "high": "max", "low": "min", "close": "last"})
+                 .dropna())
+
+    out = rs(df)                      # 含換日那根 1H，等同 MT5 原生 PERIOD_H4
+
+    # 「算指標」與「判成交」要分開處理（v3.9）：
+    #   · OHLC 保留換日棒 → ATR/EMA50 跟 EA 的 iATR/iMA 讀到的完全一致。
+    #     舊版把換日棒整根丟掉，K棒振幅縮水、ATR 系統性偏低 2.9%（USDNOK 達 6.6%），
+    #     連帶停損(4ATR)、止盈(1ATR)、加碼間距(1.5ATR) 全部比實盤窄，
+    #     才會出現「回測已停損、實盤還抱著」的分歧（NZDUSD 2026-09-15）。
+    #   · trig_high/trig_low 排除換日棒 → 仍擋掉換日結算尖刺造成的假成交
+    #     （v3.2 修掉的 80 筆虛假止盈，佔當時淨利 6.7%，見第 2.4 節）。
+    if EXCLUDE_ROLLOVER_HOUR is None:
+        out["trig_high"], out["trig_low"] = out["high"], out["low"]
+    else:
+        clean = rs(df[df.index.hour != EXCLUDE_ROLLOVER_HOUR])
+        out["trig_high"] = clean["high"].reindex(out.index).fillna(out["high"])
+        out["trig_low"] = clean["low"].reindex(out.index).fillna(out["low"])
     return out
 
 
@@ -215,8 +231,9 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
     r_base = rate_series(base_ccy).to_numpy(float)     # 1 單位基礎貨幣 = 幾美元
     r_quote = rate_series(quote_ccy).to_numpy(float)   # 1 單位計價貨幣 = 幾美元
 
-    high = bars["high"].to_numpy(float)
-    low = bars["low"].to_numpy(float)
+    # high/low 只供 add_indicators 算 ATR/ADX；判成交一律走 trig_*（見 load_4h）
+    high = bars["trig_high"].to_numpy(float)
+    low = bars["trig_low"].to_numpy(float)
     close = bars["close"].to_numpy(float)
     atr_a = bars["atr"].to_numpy(float)
     ema_a = bars["ema50"].to_numpy(float)

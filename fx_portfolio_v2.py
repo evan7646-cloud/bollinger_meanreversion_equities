@@ -35,7 +35,8 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None,
         rq = (pd.Series(1.0, index=d.index) if q == "USD" else rates[q].reindex(d.index).ffill().bfill())
         books[p] = dict(
             rows=[pos[t] for t in d.index],
-            high=d["high"].to_numpy(float), low=d["low"].to_numpy(float),
+            # 成交判定用 trig_*（排除換日棒的極值），指標則已用含換日棒的 OHLC 算好
+            high=d["trig_high"].to_numpy(float), low=d["trig_low"].to_numpy(float),
             close=d["close"].to_numpy(float), atr=d["atr"].to_numpy(float),
             ema=d["ema50"].to_numpy(float),
             adx=(d["adx"].to_numpy(float) if "adx" in d else np.zeros(len(d))),
