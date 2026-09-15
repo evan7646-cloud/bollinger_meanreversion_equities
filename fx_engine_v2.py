@@ -58,8 +58,29 @@ PAIR_CCY = {
     "CADCHF": ("CAD", "CHF"), "AUDCHF": ("AUD", "CHF"), "NZDCHF": ("NZD", "CHF"),
     "AUDCAD": ("AUD", "CAD"), "NZDCAD": ("NZD", "CAD"), "AUDNZD": ("AUD", "NZD"),
 }
+
+# 非 G8 標的：目的是提高「有效獨立賭注數」。現有 12 檔全由 8 個貨幣兩兩組成，
+# 策略報酬平均相關 0.140、有效獨立賭注只有 8.8 個（名目 12）。
+# 下列 11 檔帶進 SGD/CNH/NOK/SEK/PLN/CZK/HUF 共 7 個全新貨幣。
+# 挑選邏輯（尚待實測驗證）：
+#   · SGD 由 MAS 用政策區間管理、CNH 有中間價機制 → 結構上偏均值回歸
+#   · NOK/SEK 對 EUR 長期區間震盪
+#   · PLN/CZK/HUF 對 EUR 相對穩定（歐盟外圍但與歐元區連動）
+# 刻意不納入 TRY/ZAR/MXN：有持續性貶值趨勢（carry），均值回歸會一路接刀，
+# 跟已實測為負的黃金（年化 −0.48%、ADX>38 佔 15.1%）是同一種失敗模式。
+NON_G8_PAIRS = {
+    "USDSGD": ("USD", "SGD"), "USDCNH": ("USD", "CNH"),
+    "USDNOK": ("USD", "NOK"), "EURNOK": ("EUR", "NOK"), "USDSEK": ("USD", "SEK"),
+    "EURPLN": ("EUR", "PLN"), "USDPLN": ("USD", "PLN"),
+    "EURCZK": ("EUR", "CZK"), "USDCZK": ("USD", "CZK"),
+    "EURHUF": ("EUR", "HUF"), "USDHUF": ("USD", "HUF"),
+}
+PAIR_CCY.update(NON_G8_PAIRS)
 JPY_QUOTED = {p for p, (b, q) in PAIR_CCY.items() if q == "JPY"}
-ALL_28_PAIRS = list(PAIR_CCY.keys())
+# HUF 跟 JPY 一樣是「大數字報價」（報價約 380、小數 2~3 位），pip 定義同為 0.01
+BIG_QUOTE = JPY_QUOTED | {p for p, (b, q) in PAIR_CCY.items() if q == "HUF"}
+ALL_28_PAIRS = [p for p in PAIR_CCY if p not in NON_G8_PAIRS]
+ALL_PAIRS = list(PAIR_CCY.keys())
 
 CFG = dict(
     base_order=1500.0,     # 首單目標名目金額 (USD)
@@ -138,10 +159,17 @@ def add_indicators(bars):
 def build_usd_rates(need_ccys):
     """回傳 {貨幣: Series(該貨幣 1 單位值多少美元)}，索引為 4H 時間。"""
     rates = {"USD": None}   # USD 恆為 1.0，後面特別處理
+    # (報價對, 是否需要取倒數)。取倒數代表該貨幣是計價方，例如 USDCAD 報價是
+    # 「1 USD = 幾 CAD」，要換成「1 CAD = 幾 USD」得取倒數。
     direct = {"EUR": ("EURUSD", False), "GBP": ("GBPUSD", False),
               "AUD": ("AUDUSD", False), "NZD": ("NZDUSD", False),
               "CAD": ("USDCAD", True), "CHF": ("USDCHF", True),
-              "JPY": ("USDJPY", True)}
+              "JPY": ("USDJPY", True),
+              # 非 G8：全部都有 USDxxx 報價，所以一律取倒數
+              "SGD": ("USDSGD", True), "CNH": ("USDCNH", True),
+              "NOK": ("USDNOK", True), "SEK": ("USDSEK", True),
+              "PLN": ("USDPLN", True), "CZK": ("USDCZK", True),
+              "HUF": ("USDHUF", True)}
     for ccy in need_ccys:
         if ccy == "USD":
             continue
@@ -403,7 +431,7 @@ def load_real_costs():
             continue
         row = df.loc[pair]
         out[pair] = dict(
-            pip_size=0.01 if pair in JPY_QUOTED else 0.0001,
+            pip_size=0.01 if pair in BIG_QUOTE else 0.0001,
             spread_pips=float(row["點差中位數(Pips)"]),
             swap_long=float(row["做多Swap($/手/日)"]),
             swap_short=float(row["做空Swap($/手/日)"]),
@@ -423,7 +451,7 @@ def load_costs_all_pairs(default_spread_pips: float = 2.5):
         if pair in out:
             continue
         out[pair] = dict(
-            pip_size=0.01 if pair in JPY_QUOTED else 0.0001,
+            pip_size=0.01 if pair in BIG_QUOTE else 0.0001,
             spread_pips=default_spread_pips,
             swap_long=-3.0, swap_short=-3.0,
             cost_is_estimated=True,

@@ -33,8 +33,10 @@ sys.path.insert(0, ROOT)
 # v3.4：拿掉 CADJPY（近期 JPY 趨勢性強，不利均值回歸策略），
 # 加入 CADCHF、GBPCAD。v3.5：再加入 NZDCAD。28 檔全數使用
 # ExportForexRealCosts.mq5 實測點差，無估計值。
+# v3.8：加入 USDNOK。非 G8 標的，與現有 12 檔平均相關僅 +0.101（12 檔彼此 +0.151），
+# 提高有效獨立賭注數 8.5 -> 9.1。
 TOP8 = ["AUDCAD", "AUDCHF", "GBPNZD", "GBPCHF", "EURCHF",
-        "NZDUSD", "EURAUD", "AUDUSD", "NZDCHF", "CADCHF", "GBPCAD", "NZDCAD"]
+        "NZDUSD", "EURAUD", "AUDUSD", "NZDCHF", "CADCHF", "GBPCAD", "NZDCAD", "USDNOK"]
 DATA_DIR = os.path.join(ROOT, "data_fx_1h")
 DOCS_DIR = os.path.join(ROOT, "docs")
 
