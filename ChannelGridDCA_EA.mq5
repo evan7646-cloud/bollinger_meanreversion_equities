@@ -6,7 +6,7 @@
 //|  資料來源：TradingView 的 Pepperstone 報價，已轉換成 MT5 broker 時間|
 //+------------------------------------------------------------------+
 #property copyright "Grid Strategy Project"
-#property version   "3.60"
+#property version   "3.70"
 #property description "通道均值回歸 DCA 網格：跌破 EMA50-2ATR 做多、突破 EMA50+2ATR 做空，"
 #property description "最多 4 層 DCA，止盈 min(EMA50, 均價+1ATR)，硬停損 均價-4ATR。"
 #property description "手數以帳戶幣別名目金額換算（正確處理交叉盤跨幣別），非固定手數。"
@@ -23,6 +23,10 @@
 #property description "2025 年 -$37.83，但停損次數其實差不多（102 vs 67）。改用"
 #property description "首單名目 x (長期ATR中位數 / 當下ATR) 後，2020 年由 -0.76% 轉為 +2.37%、"
 #property description "該年回撤 11.21%->6.31%，全期最大回撤 11.21%->7.05%，Calmar 0.29->0.43。"
+#property description "v3.7：ADX 趨勢過濾（預設啟用，並取代 v3.6 的波動目標化）。"
+#property description "ADX>門檻時禁止新開倉與加碼——均值回歸最怕在強趨勢裡一路接刀。"
+#property description "10年回測：年化 3.23%->3.52%、最大回撤 11.21%->4.46%、Calmar 0.29->0.79。"
+#property description "報酬與回撤同時改善，且門檻 34~50 全區間有效、前後半段獨立驗證均成立。"
 
 #include <Trade/Trade.mqh>
 
@@ -34,7 +38,11 @@ input double InpBaseOrderPct   = 6.0;       // 首單名目金額 = 淨值的百
 input double InpBaseOrderUSD   = 1500.0;    // 首單名目金額（InpSizeByEquity=false 時使用）
 input double InpSizeMultiplier = 1.2;       // 加碼金額倍數（每層固定 1.2 倍首單，非複利）
 input double InpLotMultiplier  = 1.0;       // 全域下單倍數（例如輸入 2 = 所有手數放大兩倍；不影響風控比例）
-input bool   InpVolTarget      = true;      // 波動度目標化：ATR 膨脹時自動縮小部位（見檔頭 v3.6 說明）
+input bool   InpVolTarget      = false;     // 波動度目標化（v3.6）。v3.7 起預設關閉：ADX 過濾效果更好，兩者疊加反而少賺
+input bool   InpAdxFilter      = true;      // ADX 趨勢過濾（v3.7，建議開啟）
+input int    InpAdxPeriod      = 14;        // ADX 週期（10/14/20 實測都有效，14 最佳）
+input double InpAdxMax         = 38.0;      // ADX 高於此值禁止動作（34~50 全區間有效）
+input bool   InpAdxBlockDca    = true;      // 連加碼一起擋（趨勢盤裡加碼才是真正致命的部分）
 input int    InpVolRefBars     = 500;       // 長期 ATR 基準取樣根數（500 根 H4 ≈ 250 天）
 input double InpVolScaleMin    = 0.5;       // 縮放下限（極端波動時最多縮到原本的幾成）
 input double InpVolScaleMax    = 1.0;       // 縮放上限（1.0 = 只縮不放）
@@ -66,6 +74,7 @@ string         g_syms[];
 double         g_median_spread[];
 int            g_ema_handle[];
 int            g_atr_handle[];
+int            g_adx_handle[];
 int            g_count = 0;
 
 //+------------------------------------------------------------------+
@@ -86,6 +95,7 @@ int OnInit()
    ArrayResize(g_median_spread, n);
    ArrayResize(g_ema_handle, n);
    ArrayResize(g_atr_handle, n);
+   ArrayResize(g_adx_handle, n);
 
    for(int i = 0; i < n; i++)
    {
@@ -98,8 +108,10 @@ int OnInit()
 
       g_ema_handle[i] = iMA(g_syms[i], PERIOD_H4, InpEmaPeriod, 0, MODE_EMA, PRICE_CLOSE);
       g_atr_handle[i] = iATR(g_syms[i], PERIOD_H4, InpAtrPeriod);
+      g_adx_handle[i] = iADX(g_syms[i], PERIOD_H4, InpAdxPeriod);
 
-      if(g_ema_handle[i] == INVALID_HANDLE || g_atr_handle[i] == INVALID_HANDLE)
+      if(g_ema_handle[i] == INVALID_HANDLE || g_atr_handle[i] == INVALID_HANDLE
+         || g_adx_handle[i] == INVALID_HANDLE)
       {
          PrintFormat("❌ %s 指標建立失敗", g_syms[i]);
          return INIT_FAILED;
@@ -126,6 +138,7 @@ void OnDeinit(const int reason)
    {
       if(g_ema_handle[i] != INVALID_HANDLE) IndicatorRelease(g_ema_handle[i]);
       if(g_atr_handle[i] != INVALID_HANDLE) IndicatorRelease(g_atr_handle[i]);
+      if(g_adx_handle[i] != INVALID_HANDLE) IndicatorRelease(g_adx_handle[i]);
    }
    Comment("");
 }
@@ -339,6 +352,20 @@ void OnTick()
       double spread_pips = (ask - bid) / pip_size;
       bool spread_ok = (spread_pips <= g_median_spread[i] * InpMaxSpreadMult);
 
+      // ADX 趨勢過濾：讀前一根已收盤的 ADX（shift=1，與 EMA/ATR 同一個慣例）
+      double adx_val = 0.0;
+      bool   adx_ok  = true;
+      if(InpAdxFilter)
+      {
+         double adx_buf[];
+         if(CopyBuffer(g_adx_handle[i], 0, 1, 1, adx_buf) > 0)
+         {
+            adx_val = adx_buf[0];
+            adx_ok  = (adx_val <= InpAdxMax);
+         }
+         // 讀不到就維持 adx_ok=true：寧可照常交易，也不要因為指標沒準備好而整檔停擺
+      }
+
       // 波動度目標化：ATR 相對長期中位數膨脹時縮小部位，讓單次停損的美元金額大致固定
       double vs = VolScale(g_atr_handle[i], atr);
       double base_n = base_notional * vs;
@@ -355,7 +382,7 @@ void OnTick()
       {
          ClearLayer(sym);
 
-         if(spread_ok && TotalNotional() + base_n <= max_notional)
+         if(spread_ok && adx_ok && TotalNotional() + base_n <= max_notional)
          {
             bool go_long  = InpAllowLong  && (bid <= lower);
             bool go_short = InpAllowShort && (bid >= upper);
@@ -399,7 +426,7 @@ void OnTick()
          {
             CloseAll(sym, StringFormat("止盈 @ %.5f", tp_level));
          }
-         else if(layer < InpMaxLayers && spread_ok)
+         else if(layer < InpMaxLayers && spread_ok && (adx_ok || !InpAdxBlockDca))
          {
             //--- DCA 加碼：均價 ∓ 層數 × 1.5ATR
             double step = layer * InpDcaStepAtr * atr;
@@ -438,7 +465,8 @@ void OnTick()
                                    sym, has_pos ? (dir > 0 ? "多" : "空") : "－",
                                    has_pos ? GetLayer(sym, n_pos) : 0, vol,
                                    ema, lower, upper, spread_pips, spread_ok ? "" : " ⛔")
-                         + StringFormat("         波動縮放 x%.2f（名目 %.0f）\n", vs, base_n);
+                         + StringFormat("         ADX %.1f%s | 波動縮放 x%.2f（名目 %.0f）\n",
+                                        adx_val, adx_ok ? "" : " ⛔趨勢盤停手", vs, base_n);
    }
 
    if(InpVerboseLog) Comment(dashboard);

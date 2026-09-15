@@ -75,6 +75,11 @@ CFG = dict(
     # 對照 2025 年的 −$37.83，停損次數其實差不多（102 vs 67）。
     vol_target=None,       # 例：1.0 = 完全目標化；None = 關閉
     vol_clip=(0.4, 1.5),   # 縮放倍數的上下限，避免極端值把部位放到失控或縮到沒有
+    # ADX 趨勢強度過濾：均值回歸最怕在強趨勢裡一路接刀。
+    # adx_max=None 關閉；設數值則 ADX 高於它時禁止動作。
+    # adx_block_dca=True 時連加碼一起擋（加碼才是趨勢盤裡真正致命的部分）。
+    adx_max=None,
+    adx_block_dca=True,
 )
 
 
@@ -95,6 +100,24 @@ def load_4h(pair):
     return out
 
 
+def _adx(d, period=14):
+    """Wilder 的 ADX。衡量趨勢強度（不含方向）：>25 通常視為趨勢盤、<20 為盤整盤。
+    均值回歸策略最怕的就是在強趨勢裡一路接刀，所以拿它當進場過濾器。"""
+    up = d["high"].diff()
+    dn = -d["low"].diff()
+    plus_dm = np.where((up > dn) & (up > 0), up, 0.0)
+    minus_dm = np.where((dn > up) & (dn > 0), dn, 0.0)
+    pc = d["close"].shift(1)
+    tr = np.maximum(d["high"] - d["low"],
+                    np.maximum((d["high"] - pc).abs(), (d["low"] - pc).abs()))
+    a = 1.0 / period                      # Wilder 平滑等價於 alpha = 1/period 的 EMA
+    atr_w = pd.Series(tr, index=d.index).ewm(alpha=a, adjust=False).mean()
+    pdi = 100 * pd.Series(plus_dm, index=d.index).ewm(alpha=a, adjust=False).mean() / atr_w
+    mdi = 100 * pd.Series(minus_dm, index=d.index).ewm(alpha=a, adjust=False).mean() / atr_w
+    dx = 100 * (pdi - mdi).abs() / (pdi + mdi).replace(0, np.nan)
+    return dx.ewm(alpha=a, adjust=False).mean()
+
+
 def add_indicators(bars):
     d = bars.copy()
     pc = d["close"].shift(1)
@@ -106,6 +129,7 @@ def add_indicators(bars):
     # 這是為了跟實盤 EA 對齊：EA 呼叫 CopyBuffer(handle, 0, 1, 1, buf)，shift=1
     # 代表前一根「已收盤」的 K 棒，不會用到還在跑的當根。舊版直接用當根的
     # EMA/ATR（含當根收盤價）去比對當根的 high/low，是輕微的未來函數。
+    d["adx"] = _adx(d).shift(1)          # 跟 EMA/ATR 一樣只用前一根已收盤的值
     d["atr"] = d["atr"].shift(1)
     d["ema50"] = d["ema50"].shift(1)
     return d.dropna(subset=["atr", "ema50"])
@@ -160,6 +184,10 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
     close = bars["close"].to_numpy(float)
     atr_a = bars["atr"].to_numpy(float)
     ema_a = bars["ema50"].to_numpy(float)
+    adx_a = (bars["adx"].to_numpy(float) if "adx" in bars
+             else np.zeros(len(bars)))
+    adx_max = cfg.get("adx_max")
+    adx_block_dca = cfg.get("adx_block_dca", True)
     dates = idx.date
     weekdays = idx.weekday
 
@@ -219,8 +247,13 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
             comm = lots * COMMISSION_PER_LOT_SIDE
             return q, comm, lots
 
+        # ADX 過濾：趨勢太強時不開新倉（可選擇是否連加碼一起擋）
+        adx_ok = True if not adx_max else (adx_a[i] <= adx_max or not np.isfinite(adx_a[i]))
+
         if side == 0:
-            if l <= lower:
+            if not adx_ok:
+                pass
+            elif l <= lower:
                 px = min(c, lower) + half_spread
                 q, comm, lots = open_leg(base_order * vs[i], px, 1)
                 notional_usd = q * rb
@@ -230,7 +263,7 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
                     invested_usd = notional_usd
                     lots_log.append(lots)
                     entry_time, entry_l1_price, entry_i = idx[i], px, i
-            elif h >= upper:
+            elif h >= upper and adx_ok:
                 px = max(c, upper) - half_spread
                 q, comm, lots = open_leg(base_order * vs[i], px, -1)
                 notional_usd = q * rb
@@ -283,7 +316,8 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
 
             if not closed and layer < cfg["max_layers"]:
                 step = layer * cfg["dca_step"] * atr
-                if side > 0 and l <= avg_entry - step:
+                dca_allowed = adx_ok or not adx_block_dca
+                if side > 0 and l <= avg_entry - step and dca_allowed:
                     px = (avg_entry - step) + half_spread
                     q, comm, lots = open_leg(dca_order * vs[i], px, 1)
                     cash -= comm
@@ -292,7 +326,7 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
                     invested_usd += q * rb
                     layer += 1
                     lots_log.append(lots)
-                elif side < 0 and h >= avg_entry + step:
+                elif side < 0 and h >= avg_entry + step and dca_allowed:
                     px = (avg_entry + step) - half_spread
                     q, comm, lots = open_leg(dca_order * vs[i], px, -1)
                     cash -= comm

@@ -38,6 +38,7 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None,
             high=d["high"].to_numpy(float), low=d["low"].to_numpy(float),
             close=d["close"].to_numpy(float), atr=d["atr"].to_numpy(float),
             ema=d["ema50"].to_numpy(float),
+            adx=(d["adx"].to_numpy(float) if "adx" in d else np.zeros(len(d))),
             rb=rb.to_numpy(float), rq=rq.to_numpy(float),
             # 波動度目標化縮放（見 fx_engine_v2.CFG["vol_target"] 的說明）
             vs=((d["atr"].rolling(500, min_periods=100).median() / d["atr"])
@@ -67,6 +68,9 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None,
             st["last_j"] = j
             c, h, l = st["close"][j], st["high"][j], st["low"][j]
             atr, ema = st["atr"][j], st["ema"][j]
+            # ADX 趨勢強度過濾（見 fx_engine_v2.CFG["adx_max"]）
+            _am = cfg.get("adx_max")
+            adx_ok = True if not _am else (st["adx"][j] <= _am or not np.isfinite(st["adx"][j]))
             rb, rq = st["rb"][j], st["rq"][j]
             cs = st["costs"]
             hs = cs["spread_pips"] * cs["pip_size"] / 2.0
@@ -81,7 +85,9 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None,
 
             if st["side"] == 0:
                 trig = None
-                if l <= lower:
+                if not adx_ok:
+                    pass
+                elif l <= lower:
                     trig, px, sd = 1, min(c, lower) + hs, 1
                 elif h >= upper:
                     trig, px, sd = -1, max(c, upper) - hs, -1
@@ -112,7 +118,8 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None,
                         comm = (st["qty"] / CONTRACT_SIZE) * COMMISSION_PER_LOT_SIDE
                         cash += pnl - comm; trades.append((kind, pnl - comm, p)); closed = True
 
-                if not closed and st["layer"] < cfg["max_layers"]:
+                dca_allowed = adx_ok or not cfg.get("adx_block_dca", True)
+                if not closed and st["layer"] < cfg["max_layers"] and dca_allowed:
                     step = st["layer"] * cfg["dca_step"] * atr
                     hit = (sd > 0 and l <= st["avg"] - step) or (sd < 0 and h >= st["avg"] + step)
                     if hit:
