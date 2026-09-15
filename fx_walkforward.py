@@ -77,7 +77,43 @@ def score_cost(res, bars, costs):
     return (atr / spread) if spread > 0 else np.nan
 
 
+def _hurst(close, max_lag=40):
+    """用 R/S 之外較穩定的做法：不同 lag 下的離差標準差對 lag 取雙對數迴歸，斜率即 H。
+    H < 0.5 = 均值回歸（本策略要的）、H > 0.5 = 趨勢、H ≈ 0.5 = 隨機漫步。
+    文獻常用門檻：H < 0.40 強回歸、0.40~0.45 中度回歸、0.55~0.60 中度趨勢、> 0.60 強趨勢。"""
+    x = np.log(np.asarray(close, dtype=float))
+    n = len(x)
+    if n < max_lag * 4:
+        return np.nan
+    lags = np.arange(2, max_lag)
+    tau = []
+    for l in lags:
+        d = x[l:] - x[:-l]
+        tau.append(np.sqrt(np.std(d)) if len(d) else np.nan)
+    tau = np.asarray(tau)
+    ok = np.isfinite(tau) & (tau > 0)
+    if ok.sum() < 5:
+        return np.nan
+    return float(np.polyfit(np.log(lags[ok]), np.log(tau[ok]), 1)[0] * 2.0)
+
+
+def score_hurst(res, bars, costs):
+    """回傳 0.5 − H：數值越大代表越偏均值回歸，越適合本策略。"""
+    h = _hurst(bars["close"].to_numpy())
+    return np.nan if not np.isfinite(h) else 0.5 - h
+
+
+def score_winrate(res, bars, costs):
+    """使用者的假設：勝率開始下降代表該貨幣對走出趨勢、均值回歸失效。
+    直接用回看視窗內的實際勝率排名。交易數太少的視窗不可信，退回 NaN 排除。"""
+    if res["n_trades"] < 8:
+        return np.nan
+    return res["win_rate"]
+
+
 RULES = {
+    "winrate": score_winrate,
+    "hurst": score_hurst,
     "sharpe": score_sharpe,
     "calmar": score_calmar,
     "smooth": score_smooth,
@@ -108,8 +144,10 @@ def rank_pairs(pairs, start, end, rule, rates, costs_all):
 
 
 def walk_forward(rule, top_k=12, lookback_days=180, hold_days=60,
-                 universe=None, capital=INITIAL_CAPITAL, verbose=True):
-    """滾動選股回測。回傳每一段的結果與串接後的總績效。"""
+                 universe=None, capital=INITIAL_CAPITAL, verbose=True,
+                 offset_days=0):
+    """offset_days：把整個切段網格往後平移幾天。用來做穩健性檢查——
+    如果某個再平衡頻率的優勢只是「切點剛好避開 2020 崩盤」，平移網格後就會消失。"""
     universe = universe or ALL_28_PAIRS
     costs_all = load_costs_all_pairs()
     need = set()
@@ -122,7 +160,7 @@ def walk_forward(rule, top_k=12, lookback_days=180, hold_days=60,
     t0, tN = idx[0], idx[-1]
 
     segs = []
-    cur = t0 + pd.Timedelta(days=lookback_days)
+    cur = t0 + pd.Timedelta(days=lookback_days + offset_days)
     while cur < tN:
         nxt = min(cur + pd.Timedelta(days=hold_days), tN)
         if (nxt - cur).days < hold_days * 0.5:      # 尾巴太短就併掉，避免雜訊
@@ -130,6 +168,8 @@ def walk_forward(rule, top_k=12, lookback_days=180, hold_days=60,
         segs.append((cur - pd.Timedelta(days=lookback_days), cur, nxt))
         cur = nxt
 
+    # 少數視窗會因為「該段完全沒有訊號」而回傳 NaN 報酬。連乘時要跳過，
+    # 否則整條權益倍數會被一個 NaN 污染成 NaN（先前版本的年化算不出來就是這個原因）。
     equity_mult = 1.0
     out = []
     for lb_s, lb_e, hold_e in segs:
@@ -138,7 +178,8 @@ def walk_forward(rule, top_k=12, lookback_days=180, hold_days=60,
             continue
         r = run_portfolio_v2(sel, capital=capital, start=lb_e, end=hold_e)
         seg_ret = r["total_return_pct"] / 100.0
-        equity_mult *= (1 + seg_ret)
+        if np.isfinite(seg_ret):
+            equity_mult *= (1 + seg_ret)
         out.append(dict(rebalance=lb_e.date(), hold_to=hold_e.date(),
                         ret_pct=seg_ret * 100, mdd_pct=r["max_dd_pct"],
                         n_trades=r["n_trades"], picked=",".join(sel)))
@@ -147,6 +188,12 @@ def walk_forward(rule, top_k=12, lookback_days=180, hold_days=60,
                   f"MDD {r['max_dd_pct']:5.2f}%  選中 {' '.join(sel[:6])}...")
 
     df = pd.DataFrame(out)
+    # 串接成連續權益曲線後再算「跨段」最大回撤——分段各自重跑會把長期回撤切碎，
+    # 只看單段 MDD 會低估 2020 那種水下一年多的情況。
+    chain_mdd = np.nan
+    if len(df):
+        curve = (1 + df["ret_pct"].fillna(0) / 100).cumprod()
+        chain_mdd = abs(((curve - curve.cummax()) / curve.cummax()).min()) * 100
     years = (tN - (t0 + pd.Timedelta(days=lookback_days))).days / 365.25
     total = (equity_mult - 1) * 100
     ann = ((equity_mult) ** (1 / years) - 1) * 100 if years > 0 else np.nan
@@ -154,6 +201,7 @@ def walk_forward(rule, top_k=12, lookback_days=180, hold_days=60,
                 total_return_pct=total, ann_return_pct=ann,
                 worst_seg_pct=df["ret_pct"].min() if len(df) else np.nan,
                 max_seg_mdd_pct=df["mdd_pct"].max() if len(df) else np.nan,
+                chain_mdd_pct=chain_mdd,
                 n_segments=len(df), segments=df, years=years)
 
 
