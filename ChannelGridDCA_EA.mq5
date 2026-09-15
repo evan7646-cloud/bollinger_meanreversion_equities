@@ -6,7 +6,7 @@
 //|  資料來源：TradingView 的 Pepperstone 報價，已轉換成 MT5 broker 時間|
 //+------------------------------------------------------------------+
 #property copyright "Grid Strategy Project"
-#property version   "3.50"
+#property version   "3.60"
 #property description "通道均值回歸 DCA 網格：跌破 EMA50-2ATR 做多、突破 EMA50+2ATR 做空，"
 #property description "最多 4 層 DCA，止盈 min(EMA50, 均價+1ATR)，硬停損 均價-4ATR。"
 #property description "手數以帳戶幣別名目金額換算（正確處理交叉盤跨幣別），非固定手數。"
@@ -18,6 +18,11 @@
 #property description "v3.4：拿掉 CADJPY（近期 JPY 趨勢性強，不利均值回歸），"
 #property description "加入 CADCHF、GBPCAD，共11檔，全數實測點差。"
 #property description "v3.5：加入 NZDCAD，共12檔。"
+#property description "v3.6：波動度目標化。停損在均價±4ATR，ATR 膨脹時每次停損的美元"
+#property description "金額會等比放大——10年回測顯示 2020 年平均單筆虧損 -$65.68，對照"
+#property description "2025 年 -$37.83，但停損次數其實差不多（102 vs 67）。改用"
+#property description "首單名目 x (長期ATR中位數 / 當下ATR) 後，2020 年由 -0.76% 轉為 +2.37%、"
+#property description "該年回撤 11.21%->6.31%，全期最大回撤 11.21%->7.05%，Calmar 0.29->0.43。"
 
 #include <Trade/Trade.mqh>
 
@@ -29,6 +34,10 @@ input double InpBaseOrderPct   = 6.0;       // 首單名目金額 = 淨值的百
 input double InpBaseOrderUSD   = 1500.0;    // 首單名目金額（InpSizeByEquity=false 時使用）
 input double InpSizeMultiplier = 1.2;       // 加碼金額倍數（每層固定 1.2 倍首單，非複利）
 input double InpLotMultiplier  = 1.0;       // 全域下單倍數（例如輸入 2 = 所有手數放大兩倍；不影響風控比例）
+input bool   InpVolTarget      = true;      // 波動度目標化：ATR 膨脹時自動縮小部位（見檔頭 v3.6 說明）
+input int    InpVolRefBars     = 500;       // 長期 ATR 基準取樣根數（500 根 H4 ≈ 250 天）
+input double InpVolScaleMin    = 0.5;       // 縮放下限（極端波動時最多縮到原本的幾成）
+input double InpVolScaleMax    = 1.0;       // 縮放上限（1.0 = 只縮不放）
 
 //--- 策略參數（與回測完全一致，不建議調整）
 input group "═══ 策略參數（已驗證，勿隨意調整）═══"
@@ -271,6 +280,29 @@ void CloseAll(string sym, string reason)
 //+------------------------------------------------------------------+
 //| 主迴圈                                                            |
 //+------------------------------------------------------------------+
+//| 波動度縮放係數：長期 ATR 中位數 ÷ 當下 ATR，夾在上下限之間        |
+//| 目的是讓「一次停損虧多少美元」在不同波動環境下大致固定。          |
+//| 回測對應 fx_engine_v2.CFG["vol_target"]，兩邊用同一個定義。       |
+//+------------------------------------------------------------------+
+double VolScale(int handle, double atr_now)
+{
+   if(!InpVolTarget || atr_now <= 0) return 1.0;
+
+   double buf[];
+   int n = CopyBuffer(handle, 0, 1, InpVolRefBars, buf);   // 從 shift=1 起算，不碰未收盤那根
+   if(n < 50) return 1.0;                                  // 歷史不足時退回不縮放
+
+   ArraySort(buf);                                         // 由小到大
+   double med = (n % 2 == 1) ? buf[n / 2] : (buf[n / 2 - 1] + buf[n / 2]) / 2.0;
+   if(med <= 0) return 1.0;
+
+   double sc = med / atr_now;
+   if(sc < InpVolScaleMin) sc = InpVolScaleMin;
+   if(sc > InpVolScaleMax) sc = InpVolScaleMax;
+   return sc;
+}
+
+//+------------------------------------------------------------------+
 void OnTick()
 {
    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
@@ -280,8 +312,8 @@ void OnTick()
    double max_notional  = (InpMaxTotalRiskPct > 0.0) ? equity * InpMaxTotalRiskPct / 100.0 : DBL_MAX;
    // InpMaxTotalRiskPct=0 時視為不設限；單一商品的加碼上限仍由 InpMaxLayers 獨立控制，不受此影響
 
-   string dashboard = StringFormat("通道網格 DCA v3（MT5內建H4，broker時區）─ 淨值 %.2f ─ 首單名目 %.0f（下單倍數 x%.2f）\n",
-                                    equity, base_notional, lot_mult);
+   string dashboard = StringFormat("通道網格 DCA v3.6（MT5內建H4，broker時區）─ 淨值 %.2f ─ 首單名目 %.0f（下單倍數 x%.2f，波動目標化 %s）\n",
+                                    equity, base_notional, lot_mult, InpVolTarget ? "開" : "關");
 
    for(int i = 0; i < g_count; i++)
    {
@@ -307,6 +339,11 @@ void OnTick()
       double spread_pips = (ask - bid) / pip_size;
       bool spread_ok = (spread_pips <= g_median_spread[i] * InpMaxSpreadMult);
 
+      // 波動度目標化：ATR 相對長期中位數膨脹時縮小部位，讓單次停損的美元金額大致固定
+      double vs = VolScale(g_atr_handle[i], atr);
+      double base_n = base_notional * vs;
+      double dca_n  = dca_notional  * vs;
+
       double lower = ema - InpChannelK * atr;
       double upper = ema + InpChannelK * atr;
 
@@ -318,7 +355,7 @@ void OnTick()
       {
          ClearLayer(sym);
 
-         if(spread_ok && TotalNotional() + base_notional <= max_notional)
+         if(spread_ok && TotalNotional() + base_n <= max_notional)
          {
             bool go_long  = InpAllowLong  && (bid <= lower);
             bool go_short = InpAllowShort && (bid >= upper);
@@ -326,7 +363,7 @@ void OnTick()
             if(go_long || go_short)
             {
                bool undersized;
-               double lots = CalcLots(sym, base_notional, undersized);
+               double lots = CalcLots(sym, base_n, undersized);
                if(lots > 0)
                {
                   double entry = go_long ? ask : bid;
@@ -341,7 +378,7 @@ void OnTick()
                   {
                      SetLayer(sym, 1);
                      PrintFormat("🟢 %s 第1層 %s %.2f 手（名目 %.0f）%s | 點差 %.1f pips",
-                                 sym, go_long ? "買進" : "賣出", lots, base_notional,
+                                 sym, go_long ? "買進" : "賣出", lots, base_n,
                                  undersized ? "⚠️低於最小手數已提高至最小值" : "", spread_pips);
                   }
                   else PrintFormat("⚠️ %s 開倉失敗 retcode=%d", sym, trade.ResultRetcode());
@@ -368,10 +405,10 @@ void OnTick()
             double step = layer * InpDcaStepAtr * atr;
             bool hit_dca = (dir > 0) ? (bid <= avg - step) : (ask >= avg + step);
 
-            if(hit_dca && TotalNotional() + dca_notional <= max_notional)
+            if(hit_dca && TotalNotional() + dca_n <= max_notional)
             {
                bool undersized;
-               double lots = CalcLots(sym, dca_notional, undersized);
+               double lots = CalcLots(sym, dca_n, undersized);
                if(lots > 0)
                {
                   bool ok = (dir > 0) ? trade.Buy(lots, sym, 0.0, 0, 0, StringFormat("CGDCA L%d", layer + 1))
@@ -384,7 +421,7 @@ void OnTick()
                      if(GetAggregatePosition(sym, d2, v2, a2, n2))
                         UpdateStops(sym, d2, a2, atr);
                      PrintFormat("🟡 %s 第%d層加碼 %.2f 手（名目 %.0f）新均價 %.5f",
-                                 sym, layer + 1, lots, dca_notional, a2);
+                                 sym, layer + 1, lots, dca_n, a2);
                   }
                   else PrintFormat("⚠️ %s 加碼失敗 retcode=%d", sym, trade.ResultRetcode());
                }
@@ -400,7 +437,8 @@ void OnTick()
          dashboard += StringFormat("%-8s %s L%d %.2f手 | 中軌%.5f 下軌%.5f 上軌%.5f | 點差%.1f%s\n",
                                    sym, has_pos ? (dir > 0 ? "多" : "空") : "－",
                                    has_pos ? GetLayer(sym, n_pos) : 0, vol,
-                                   ema, lower, upper, spread_pips, spread_ok ? "" : " ⛔");
+                                   ema, lower, upper, spread_pips, spread_ok ? "" : " ⛔")
+                         + StringFormat("         波動縮放 x%.2f（名目 %.0f）\n", vs, base_n);
    }
 
    if(InpVerboseLog) Comment(dashboard);

@@ -39,6 +39,10 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None,
             close=d["close"].to_numpy(float), atr=d["atr"].to_numpy(float),
             ema=d["ema50"].to_numpy(float),
             rb=rb.to_numpy(float), rq=rq.to_numpy(float),
+            # 波動度目標化縮放（見 fx_engine_v2.CFG["vol_target"] 的說明）
+            vs=((d["atr"].rolling(500, min_periods=100).median() / d["atr"])
+                .clip(*cfg["vol_clip"]).fillna(1.0).to_numpy(float)
+                if cfg.get("vol_target") else np.ones(len(d))),
             date=d.index.date, wd=d.index.weekday, costs=costs_all[p],
             side=0, qty=0.0, layer=0, avg=0.0, last_date=None, last_j=0,
         )
@@ -82,10 +86,11 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None,
                 elif h >= upper:
                     trig, px, sd = -1, max(c, upper) - hs, -1
                 if trig:
-                    q = base_order / rb
+                    bo = base_order * st["vs"][j]
+                    q = bo / rb
                     lots = q / CONTRACT_SIZE
                     comm = lots * COMMISSION_PER_LOT_SIDE
-                    if cash > base_order * 0.05 + comm:
+                    if cash > bo * 0.05 + comm:
                         cash -= comm
                         st.update(side=sd, qty=q, layer=1, avg=px)
                         all_lots.append(lots)
@@ -112,10 +117,11 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None,
                     hit = (sd > 0 and l <= st["avg"] - step) or (sd < 0 and h >= st["avg"] + step)
                     if hit:
                         px = (st["avg"] - step + hs) if sd > 0 else (st["avg"] + step - hs)
-                        q = dca_order / rb
+                        do = dca_order * st["vs"][j]
+                        q = do / rb
                         lots = q / CONTRACT_SIZE
                         comm = lots * COMMISSION_PER_LOT_SIDE
-                        if cash > dca_order * 0.05 + comm:
+                        if cash > do * 0.05 + comm:
                             cash -= comm
                             st["avg"] = (st["avg"] * st["qty"] + px * q) / (st["qty"] + q)
                             st["qty"] += q; st["layer"] += 1
@@ -162,7 +168,10 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None,
                 win_rate=len(wins) / len(pnls) * 100.0 if pnls else 0.0, n_trades=len(pnls),
                 avg_deployed_pct=deployed.mean() / capital * 100.0,
                 peak_deployed_pct=deployed.max() / capital * 100.0,
-                median_lots=float(np.median(all_lots)), max_lots=float(np.max(all_lots)),
+                # 短視窗（walk-forward 的單一持有段）可能完全沒有訊號、一筆都沒開，
+                # 此時 all_lots 是空陣列，np.median/np.max 會拋 ValueError。
+                median_lots=float(np.median(all_lots)) if all_lots else 0.0,
+                max_lots=float(np.max(all_lots)) if all_lots else 0.0,
                 years=years, equity=eq, equity_adv=eq_adv)
 
 

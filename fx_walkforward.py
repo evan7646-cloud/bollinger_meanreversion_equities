@@ -212,3 +212,68 @@ def static_baseline(pairs, lookback_days=180, capital=INITIAL_CAPITAL):
     r = run_portfolio_v2(pairs, capital=capital, start=start)
     return dict(total_return_pct=r["total_return_pct"], ann_return_pct=r["ann_return_pct"],
                 max_dd_pct=r["max_dd_pct"], n_trades=r["n_trades"])
+
+
+def walk_forward_continuous(rule, top_k=12, lookback_days=180, hold_days=120,
+                            universe=None, capital=INITIAL_CAPITAL, offset_days=0,
+                            verbose=False):
+    """連續資金版的滾動選股回測。
+
+    跟 walk_forward() 的差別：資金在段與段之間**接續**（前一段的期末權益就是下一段的
+    起始本金），而且把每一段的完整權益序列接起來。這樣算出來的最大回撤是**逐根 4H**
+    的真實值，不像分段版只有「段粒度」的串接曲線（那個會低估跨段與段內的回撤）。
+
+    仍然假設再平衡當下把所有部位平倉——這是換掉商品時實務上必須做的事，否則被移出
+    清單的部位會變成 EA 不再管理的孤兒倉。
+    """
+    universe = universe or ALL_28_PAIRS
+    costs_all = load_costs_all_pairs()
+    need = set()
+    for p in universe:
+        b, q = PAIR_CCY[p]
+        need.add(b); need.add(q)
+    rates = build_usd_rates(need)
+
+    idx = add_indicators(load_4h(universe[0])).index
+    t0, tN = idx[0], idx[-1]
+
+    segs = []
+    cur = t0 + pd.Timedelta(days=lookback_days + offset_days)
+    while cur < tN:
+        nxt = min(cur + pd.Timedelta(days=hold_days), tN)
+        if (nxt - cur).days < hold_days * 0.5:
+            break
+        segs.append((cur - pd.Timedelta(days=lookback_days), cur, nxt))
+        cur = nxt
+
+    cap = capital
+    eq_parts, adv_parts, rows = [], [], []
+    for lb_s, lb_e, hold_e in segs:
+        sel = rank_pairs(universe, lb_s, lb_e, rule, rates, costs_all)[:top_k]
+        if not sel:
+            continue
+        r = run_portfolio_v2(sel, capital=cap, start=lb_e, end=hold_e)
+        eq_parts.append(r["equity"])
+        adv_parts.append(r["equity_adv"])
+        rows.append(dict(rebalance=lb_e.date(), hold_to=hold_e.date(),
+                         start_cap=cap, end_cap=r["equity"].iloc[-1],
+                         ret_pct=r["total_return_pct"], seg_mdd_pct=r["max_dd_pct"],
+                         picked=",".join(sel)))
+        cap = float(r["equity"].iloc[-1])          # ← 資金接續，這是與分段版的關鍵差異
+        if verbose:
+            print(f"  {lb_e.date()} → {hold_e.date()}  {r['total_return_pct']:+6.2f}%  "
+                  f"期末 ${cap:,.0f}")
+
+    eq = pd.concat(eq_parts).sort_index()
+    adv = pd.concat(adv_parts).sort_index()
+    peak = eq.cummax()
+    mdd = abs(((adv - peak) / peak).min()) * 100          # 用盤中最不利價對收盤峰值
+    years = (eq.index[-1] - eq.index[0]).days / 365.25
+    total = (eq.iloc[-1] / capital - 1) * 100
+    ann = ((eq.iloc[-1] / capital) ** (1 / years) - 1) * 100
+    rets = eq.pct_change().dropna()
+    sharpe = rets.mean() / rets.std() * np.sqrt(len(eq) / years) if rets.std() > 0 else 0.0
+    return dict(rule=rule, hold=hold_days, equity=eq, equity_adv=adv,
+                ann_return_pct=ann, total_return_pct=total, max_dd_pct=mdd,
+                sharpe=sharpe, calmar=ann / mdd if mdd > 0.01 else np.nan,
+                years=years, segments=pd.DataFrame(rows))

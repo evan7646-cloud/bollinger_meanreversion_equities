@@ -69,6 +69,12 @@ CFG = dict(
     dca_step=1.5,
     stop_atr=4.0,
     tp_atr=1.0,            # 較近止盈：min(EMA50, 均價 + 1×ATR)
+    # 波動度目標化：把首單名目乘上 (ATR長期中位數 / 當下ATR)，讓「一次停損虧多少美元」
+    # 在不同波動環境下大致固定。不開啟時（None）是固定美元名目，ATR 膨脹時每次停損
+    # 的絕對金額會等比放大——2020 年的平均單筆虧損 −$65.68 就是這樣來的，
+    # 對照 2025 年的 −$37.83，停損次數其實差不多（102 vs 67）。
+    vol_target=None,       # 例：1.0 = 完全目標化；None = 關閉
+    vol_clip=(0.4, 1.5),   # 縮放倍數的上下限，避免極端值把部位放到失控或縮到沒有
 )
 
 
@@ -117,6 +123,18 @@ def build_usd_rates(need_ccys):
             continue
         pair, invert = direct[ccy]
         s = load_4h(pair)["close"]
+        # 匯率序列的缺口是靜默殺手：下游 reindex(...).ffill() 會把最後一筆值
+        # 一路凍結著用，部位換算與損益全部悄悄算錯，而且不會報錯。
+        # （實例：MT5 匯出的 GBPUSD 整個 2018 年缺漏，導致所有 GBP 交叉盤
+        #   在那一年用 2017 年底的匯率換算；walk-forward 視窗完全落在缺口內時
+        #   則直接變成 NaN。已用 EURUSD ÷ EURGBP 三角合成補回。）
+        gaps = s.index.to_series().diff()
+        big = gaps[gaps > pd.Timedelta(days=5)]
+        if len(big):
+            worst = big.max()
+            print(f"  ⚠️ 匯率基準 {pair} 有 {len(big)} 處超過 5 天的缺口"
+                  f"（最大 {worst.days} 天，最近一處在 {big.idxmax().date()}）"
+                  f"——{ccy} 相關貨幣對的換算可能失真")
         rates[ccy] = (1.0 / s) if invert else s
     return rates
 
@@ -151,6 +169,13 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
 
     base_order = cfg["base_order"] * capital_scale
     dca_order = base_order * cfg["size_mult"]
+    # 波動度縮放係數：逐根計算，用「該根當下可見的 ATR」對比其長期中位數。
+    # rolling(500).median() 約等於過去 250 天的水準，且只用到過去資料。
+    if cfg.get("vol_target"):
+        atr_ref = bars["atr"].rolling(500, min_periods=100).median()
+        vs = (atr_ref / bars["atr"]).clip(*cfg["vol_clip"]).fillna(1.0).to_numpy(float)
+    else:
+        vs = np.ones(len(bars))
 
     cash = initial_capital * capital_scale
     side = 0
@@ -197,7 +222,7 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
         if side == 0:
             if l <= lower:
                 px = min(c, lower) + half_spread
-                q, comm, lots = open_leg(base_order, px, 1)
+                q, comm, lots = open_leg(base_order * vs[i], px, 1)
                 notional_usd = q * rb
                 if cash >= notional_usd * 0.05 + comm:      # 需有足夠保證金(5%)與佣金
                     cash -= comm
@@ -207,7 +232,7 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
                     entry_time, entry_l1_price, entry_i = idx[i], px, i
             elif h >= upper:
                 px = max(c, upper) - half_spread
-                q, comm, lots = open_leg(base_order, px, -1)
+                q, comm, lots = open_leg(base_order * vs[i], px, -1)
                 notional_usd = q * rb
                 if cash >= notional_usd * 0.05 + comm:
                     cash -= comm
@@ -260,7 +285,7 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
                 step = layer * cfg["dca_step"] * atr
                 if side > 0 and l <= avg_entry - step:
                     px = (avg_entry - step) + half_spread
-                    q, comm, lots = open_leg(dca_order, px, 1)
+                    q, comm, lots = open_leg(dca_order * vs[i], px, 1)
                     cash -= comm
                     avg_entry = (avg_entry * qty + px * q) / (qty + q)
                     qty += q
@@ -269,7 +294,7 @@ def run_engine_v2(bars, pair, costs, rates, cfg=CFG, initial_capital=INITIAL_CAP
                     lots_log.append(lots)
                 elif side < 0 and h >= avg_entry + step:
                     px = (avg_entry + step) - half_spread
-                    q, comm, lots = open_leg(dca_order, px, -1)
+                    q, comm, lots = open_leg(dca_order * vs[i], px, -1)
                     cash -= comm
                     avg_entry = (avg_entry * qty + px * q) / (qty + q)
                     qty += q
