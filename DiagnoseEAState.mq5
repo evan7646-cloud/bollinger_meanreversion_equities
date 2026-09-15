@@ -23,6 +23,9 @@ input long   InpMagic   = 20260904;   // magic number（須與 EA 一致）
 input int    InpAtrPeriod  = 20;      // ATR 週期（須與 EA 一致）
 input int    InpEmaPeriod  = 50;      // EMA 週期（須與 EA 一致）
 input int    InpAdxPeriod  = 14;      // ADX 週期（須與 EA 一致）
+input double InpMaxTotalRiskPct = 60.0;  // 名目總額上限%（須與 EA 一致）
+input double InpBaseOrderPct    = 6.0;   // 首單名目占淨值%（須與 EA 一致）
+input double InpLotMultiplier   = 1.0;   // 下單倍數（須與 EA 一致）
 
 //+------------------------------------------------------------------+
 //| 與 EA 相同的品種解析邏輯（處理 .r / + / m 等 broker 後綴）        |
@@ -127,6 +130,33 @@ void OnStart()
    }
    FileWrite(fh, "POS", "_count_ea", IntegerToString(n_mine),
              "_count_other", IntegerToString(n_other), "", "");
+
+   //--- 3b) 名目總額 vs 上限：EA 最容易「安靜地」拒絕開倉的地方 -----
+   // EA 在 TotalNotional() + base_n > max_notional 時直接跳過開倉，而且不印任何訊息，
+   // 所以 log 看起來一切正常卻沒進場。這裡把當下的佔用率算出來。
+   double tot_notional = 0.0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong tk = PositionGetTicket(i);
+      if(tk == 0) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != InpMagic) continue;
+      string sy = PositionGetString(POSITION_SYMBOL);
+      double tv = SymbolInfoDouble(sy, SYMBOL_TRADE_TICK_VALUE);
+      double ts = SymbolInfoDouble(sy, SYMBOL_TRADE_TICK_SIZE);
+      double px = SymbolInfoDouble(sy, SYMBOL_BID);
+      if(tv > 0 && ts > 0 && px > 0)
+         tot_notional += PositionGetDouble(POSITION_VOLUME) * (tv / ts) * px;
+   }
+   double eq_now  = AccountInfoDouble(ACCOUNT_EQUITY);
+   double cap_amt = eq_now * InpMaxTotalRiskPct / 100.0;
+   double next_n  = eq_now * InpBaseOrderPct / 100.0 * InpLotMultiplier;
+   bool   blocked = (InpMaxTotalRiskPct > 0.0) && (tot_notional + next_n > cap_amt);
+
+   FileWrite(fh, "NOTIONAL", "total_now", DoubleToString(tot_notional, 0),
+             StringFormat("%.1f%% 淨值", eq_now > 0 ? tot_notional / eq_now * 100.0 : 0.0),
+             StringFormat("上限 %.0f%% = %.0f", InpMaxTotalRiskPct, cap_amt),
+             StringFormat("下一筆首單需要 %.0f", next_n),
+             blocked ? "🔴 已滿，新開倉會被安靜擋掉" : "✅ 還有額度");
 
    //--- 4) 每檔商品：解析結果、點差、以及 EA 當下會讀到的指標 -------
    // 兩邊若同一 broker、同一時間跑，這些數字應該幾乎一模一樣。

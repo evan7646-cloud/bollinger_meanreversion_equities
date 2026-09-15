@@ -47,8 +47,14 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None,
                 .clip(*cfg["vol_clip"]).fillna(1.0).to_numpy(float)
                 if cfg.get("vol_target") else np.ones(len(d))),
             date=d.index.date, wd=d.index.weekday, costs=costs_all[p],
-            side=0, qty=0.0, layer=0, avg=0.0, last_date=None, last_j=0,
+            side=0, qty=0.0, layer=0, avg=0.0, last_date=None, last_j=0, notional=0.0,
         )
+
+    # 名目總額上限（對應 EA 的 InpMaxTotalRiskPct，預設 60% 淨值）。
+    # cfg["max_notional_pct"]=None 表示不設限，維持舊行為。
+    _mnp = cfg.get("max_notional_pct")
+    max_notional = (capital * _mnp / 100.0) if _mnp else None
+    dep_live = 0.0
 
     sched = [[] for _ in idx]
     for p in pairs:
@@ -118,12 +124,21 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None,
                     trig, px, sd = -1, max(c, upper) - hs, -1
                 if trig:
                     bo = base_order * st["vs"][j]
+                    # EA 的 InpMaxTotalRiskPct：所有部位名目總和超過淨值的 N% 就不再開新倉。
+                    # 回測先前完全沒模擬這道關卡，導致網頁做了一堆 EA 實際會拒絕的交易
+                    # （網頁平均部署 56.6%、尖峰 160.5%，而 EA 上限是 60%）。
+                    # 注意 EA 那邊 base_notional 會乘上 InpLotMultiplier，但 max_notional 不會，
+                    # 所以放大倍數會讓這道上限提早 N 倍觸發。
+                    if max_notional is not None and dep_live + bo > max_notional:
+                        trig = None
+                if trig:
                     q = bo / rb
                     lots = q / CONTRACT_SIZE
                     comm = lots * COMMISSION_PER_LOT_SIDE
                     if cash > bo * 0.05 + comm:
                         cash -= comm
-                        st.update(side=sd, qty=q, layer=1, avg=px)
+                        dep_live += bo
+                        st.update(side=sd, qty=q, layer=1, avg=px, notional=bo)
                         all_lots.append(lots)
             else:
                 closed = False
@@ -151,17 +166,24 @@ def run_portfolio_v2(pairs, capital=INITIAL_CAPITAL, cfg=CFG, base_order=None,
                     if hit:
                         px = (st["avg"] - step + hs) if sd > 0 else (st["avg"] + step - hs)
                         do = dca_order * st["vs"][j]
+                        # EA 的加碼同樣受 InpMaxTotalRiskPct 管（見 ChannelGridDCA_EA.mq5:439）
+                        if max_notional is not None and dep_live + do > max_notional:
+                            hit = False
+                    if hit:
                         q = do / rb
                         lots = q / CONTRACT_SIZE
                         comm = lots * COMMISSION_PER_LOT_SIDE
                         if cash > do * 0.05 + comm:
                             cash -= comm
+                            dep_live += do
+                            st["notional"] += do
                             st["avg"] = (st["avg"] * st["qty"] + px * q) / (st["qty"] + q)
                             st["qty"] += q; st["layer"] += 1
                             all_lots.append(lots)
 
                 if closed:
-                    st.update(side=0, qty=0.0, layer=0, avg=0.0)
+                    dep_live -= st["notional"]
+                    st.update(side=0, qty=0.0, layer=0, avg=0.0, notional=0.0)
 
         mtm, dep, mtm_adv = 0.0, 0.0, 0.0
         for p in pairs:
