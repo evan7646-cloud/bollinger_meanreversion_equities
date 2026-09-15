@@ -20,7 +20,10 @@ import os
 import numpy as np
 import pandas as pd
 
-DATA_DIR = "data_fx_1h"
+# 預設用 TradingView 抓的資料（GitHub Actions 每小時更新用，連不到使用者的 MT5）。
+# 設環境變數 FX_DATA_DIR=data_mt5_h1 可切換到使用者 MT5 匯出的 10 年 H1，
+# 那份資料時間戳就是 broker 伺服器時間、夏令時間由 broker 處理，不需外部換算。
+DATA_DIR = os.environ.get("FX_DATA_DIR", "data_fx_1h")
 REAL_COST_TABLE = "mt5_forex_real_costs.csv"
 
 INITIAL_CAPITAL = 25000.0

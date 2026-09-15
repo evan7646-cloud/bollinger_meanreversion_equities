@@ -26,7 +26,17 @@ import datetime as dt
 import pandas as pd
 from tvDatafeed import TvDatafeed, Interval
 
-BROKER_GMT_OFFSET_HOURS = 3.0   # 跟 ChannelGridDCA_EA.mq5 的 InpBrokerGmtOffsetHours 保持同一個數字
+# broker 伺服器時區會隨夏令時間在 UTC+2 / UTC+3 之間切換，不是固定值。
+# 拿使用者 MT5 匯出的 10 年 H1（data_mt5_h1/）逐日比對後確認：
+#   2025 春 03-07 差1h → 03-10 對齊（美國 DST 03-09 開始；歐盟要到 03-30）
+#   2025 秋 10-31 對齊 → 11-03 差1h（美國 DST 11-02 結束；歐盟 10-26 就結束了）
+#   2026 春 03-06 差1h → 03-09 對齊（美國 DST 03-08 開始）
+# 三個轉換點全部吻合美國規則、全部不吻合歐盟規則，所以照 US/Eastern 判斷。
+# 舊版寫死 3.0，導致每年 11～2 月的 K 棒跟 MT5 差整整一小時（實測價差
+# 中位數 3.1~5.3 pip，夏季月份則是 0.2~0.4 pip）。
+BROKER_GMT_OFFSET_DST = 3.0     # 美國夏令時間期間
+BROKER_GMT_OFFSET_STD = 2.0     # 其餘期間
+BROKER_GMT_OFFSET_HOURS = BROKER_GMT_OFFSET_DST   # 相容舊呼叫端；實際換算請用 broker_offset_hours()
 MAX_BARS = 15000                # tvDatafeed 1H 大約能拿到 600+ 天
 
 _tv = None
@@ -51,10 +61,25 @@ def local_utc_offset_hours() -> float:
     return round((local_now - utc_now).total_seconds() / 3600.0, 2)
 
 
+def broker_offset_hours(utc_index: pd.DatetimeIndex) -> pd.Series:
+    """逐筆回傳該時間點的 broker 對 UTC 偏移（+3 夏令 / +2 其餘）。
+
+    參數是 **UTC** 的 naive 時間索引。用 US/Eastern 是否處於 DST 來判斷，
+    因為實測三個轉換點都落在美國規則上（見檔頭常數的說明）。
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        eastern = ZoneInfo("America/New_York")
+    except Exception:                      # 極舊環境沒有 zoneinfo 時退回固定值
+        return pd.Series(BROKER_GMT_OFFSET_DST, index=utc_index)
+    aware = utc_index.tz_localize("UTC").tz_convert(eastern)
+    is_dst = pd.Series([t.dst() != dt.timedelta(0) for t in aware], index=utc_index)
+    return is_dst.map({True: BROKER_GMT_OFFSET_DST, False: BROKER_GMT_OFFSET_STD})
+
+
 def fetch_pepperstone_1h(symbol: str, retries: int = 3) -> pd.DataFrame:
     """回傳欄位 [datetime, open, high, low, close]，datetime 已經是『MT5 broker 時間』。"""
     offset_local = local_utc_offset_hours()
-    shift_hours = BROKER_GMT_OFFSET_HOURS - offset_local  # 一次性換算：本地naive -> broker時間
 
     last_err = None
     for attempt in range(retries):
@@ -65,7 +90,10 @@ def fetch_pepperstone_1h(symbol: str, retries: int = 3) -> pd.DataFrame:
             if df is None or df.empty:
                 raise ValueError("empty result")
             df = df.reset_index().rename(columns={"datetime": "raw_local"})
-            df["datetime"] = df["raw_local"] + pd.Timedelta(hours=shift_hours)
+            # tvDatafeed 回傳的是「執行這支程式的機器」的本地 naive 時間，
+            # 先還原成 UTC，再依該時間點當下的 broker 偏移換算成 broker 時間。
+            utc = pd.DatetimeIndex(df["raw_local"]) - pd.Timedelta(hours=offset_local)
+            df["datetime"] = utc + pd.to_timedelta(broker_offset_hours(utc).values, unit="h")
             df = df[["datetime", "open", "high", "low", "close"]].sort_values("datetime")
             df = df.drop_duplicates(subset="datetime")
             return df.reset_index(drop=True)

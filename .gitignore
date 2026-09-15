@@ -11,3 +11,8 @@ data_tv_intraday_5m/
 data_ibkr_5m/
 data_ibkr_spread/
 data_fx_1h/
+
+# MT5 匯出的 10 年 H1 原始資料（29 檔 × 3MB ≈ 88MB）。
+# 不進版控：每小時的 GitHub Actions 只用 data_fx_1h/（雲端連不到使用者的 MT5），
+# 這份是一次性的深度分析資料，要重建就在 MT5 跑 ExportH1Bars.mq5（約 8 分鐘）。
+data_mt5_h1/
